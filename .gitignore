@@ -39,3 +39,55 @@
 
 # debug information files
 *.dwo
+
+# ==========================================
+# Project Specific Generated Files
+# ==========================================
+
+# Build directory (CMake generated)
+build/
+Build/
+BUILD/
+
+# Executable (main target)
+url_shortener
+
+# Process management
+.url_shortener.pid
+
+# Logs
+*.log
+server.log
+
+# Third party dependencies (should be managed separately)
+drogon/
+
+# CMake generated files (if any leak to root)
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+compile_commands.json
+CTestTestfile.cmake
+install_manifest.txt
+
+# Temporary files
+*.tmp
+*.temp
+*~
+.DS_Store
+Thumbs.db
+
+# IDE files
+.idea/
+*.swp
+*.swo
+*~
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db

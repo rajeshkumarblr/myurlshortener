@@ -1,0 +1,5 @@
+{
+  "listeners": [ { "address": "0.0.0.0", "port": 9090 } ],
+  "app": { "threads": 0 },
+  "log": { "level": "TRACE" }
+}
