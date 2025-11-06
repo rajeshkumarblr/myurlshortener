@@ -1,6 +1,6 @@
 # Simple Makefile wrapper for CMake build
 
-.PHONY: all build clean configure run stop test help
+.PHONY: all build clean configure run stop status rebuild test setup help
 
 # PID file for background process
 PID_FILE = .url_shortener.pid
@@ -74,17 +74,18 @@ status:
 		echo "❌ Server is not running"; \
 	fi
 
-# Run API tests (starts server if needed)
-test: 
-	@if ! [ -f $(PID_FILE) ] || ! kill -0 `cat $(PID_FILE)` 2>/dev/null; then \
-		echo "Starting server for testing..."; \
-		$(MAKE) run; \
-		sleep 2; \
-	fi
+# Run API tests (builds, stops old server, starts new server)
+test: build stop
+	@echo "Starting fresh server for testing..."
+	@$(MAKE) run
+	@sleep 2
 	@./test_api.sh
 
 # Setup: configure and build
 setup: configure build
+
+# Rebuild and restart server
+rebuild: build stop run
 
 # Help
 help:
@@ -96,8 +97,9 @@ help:
 	@echo "  distclean  - Remove entire build directory"
 	@echo "  run        - Build and start server in background"
 	@echo "  stop       - Stop the background server"
-	@echo "  status     - Check if server is running"
-	@echo "  test       - Run API tests (starts server if needed)"
+	@echo "  status     - Check server status"
+	@echo "  rebuild    - Build, stop old server, start new server"
+	@echo "  test       - Build, restart server, run API tests"
 	@echo "  setup      - Configure and build (first time)"
 	@echo "  help       - Show this help"
 	@echo ""

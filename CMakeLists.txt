@@ -7,5 +7,9 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 find_package(Drogon CONFIG REQUIRED) # install Drogon first (see below)
 
-add_executable(url_shortener src/main.cpp)
+add_executable(url_shortener 
+    src/main.cpp
+    src/UrlShortenerService.cpp
+    src/utils.cpp
+)
 target_link_libraries(url_shortener PRIVATE Drogon::Drogon)
