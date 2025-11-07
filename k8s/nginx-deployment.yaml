@@ -1,0 +1,49 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: api-gateway
+  labels:
+    app: url-shortener
+    component: api-gateway
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: url-shortener
+      component: api-gateway
+  template:
+    metadata:
+      labels:
+        app: url-shortener
+        component: api-gateway
+    spec:
+      containers:
+        - name: nginx
+          image: nginx:1.25-alpine
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 8080
+              name: http
+          volumeMounts:
+            - name: nginx-conf
+              mountPath: /etc/nginx/nginx.conf
+              subPath: nginx.conf
+          readinessProbe:
+            httpGet:
+              path: /api/v1/health
+              port: 8080
+            initialDelaySeconds: 3
+            periodSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /api/v1/health
+              port: 8080
+            initialDelaySeconds: 10
+            periodSeconds: 10
+      volumes:
+        - name: nginx-conf
+          configMap:
+            name: nginx-gateway-conf
+            items:
+              - key: nginx.conf
+                path: nginx.conf
