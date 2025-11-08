@@ -6,10 +6,12 @@ set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 find_package(Drogon CONFIG REQUIRED) # install Drogon first (see below)
+find_package(PostgreSQL REQUIRED)
 
 add_executable(url_shortener 
     src/main.cpp
     src/UrlShortenerService.cpp
     src/utils.cpp
+    src/db.cpp
 )
-target_link_libraries(url_shortener PRIVATE Drogon::Drogon)
+target_link_libraries(url_shortener PRIVATE Drogon::Drogon PostgreSQL::PostgreSQL)

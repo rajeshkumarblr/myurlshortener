@@ -2,6 +2,7 @@
 #include "utils.h"
 #include <random>
 #include <memory>
+#include "db.h"
 
 using namespace std;
 using namespace drogon;
@@ -13,6 +14,11 @@ bool UrlRecord::isExpired() const {
 
 UrlShortenerService::UrlShortenerService() {
     loadConfiguration();
+    try {
+        db::init();
+    } catch (const std::exception& e) {
+        // DB init errors surface on first use; continue startup
+    }
 }
 
 void UrlShortenerService::loadConfiguration() {
@@ -65,10 +71,16 @@ size_t UrlShortenerService::getShardIndex(const string& key) const {
 
 void UrlShortenerService::handleHealth(const HttpRequestPtr& req, 
                                       function<void(const HttpResponsePtr&)>&& callback) const {
+    bool db_ok = db::ping();
     auto resp = HttpResponse::newHttpResponse();
-    resp->setStatusCode(k200OK);
     resp->setContentTypeCode(CT_TEXT_PLAIN);
-    resp->setBody("ok");
+    if (db_ok) {
+        resp->setStatusCode(k200OK);
+        resp->setBody("ok");
+    } else {
+        resp->setStatusCode(k503ServiceUnavailable);
+        resp->setBody("db-unavailable");
+    }
     callback(resp);
 }
 
@@ -94,24 +106,21 @@ void UrlShortenerService::handleShorten(const HttpRequestPtr& req,
         ttlSeconds = (*body)["ttl"].asInt();
     }
     
-    // Generate unique code with collision retry
+    // Generate unique code with DB-backed collision retry
     string code;
-    UrlRecord record{
-        url, 
-        ttlSeconds > 0 ? optional{Clock::now() + chrono::seconds(ttlSeconds)} : nullopt
-    };
+    auto expiresAt = ttlSeconds > 0 ? optional{chrono::time_point<chrono::system_clock>(chrono::system_clock::now() + chrono::seconds(ttlSeconds))} : nullopt;
     
     // Generate code and use shard-specific mutex
     for (int attempt = 0; attempt < 5; ++attempt) {
         code = generateShortCode();
-        auto shardIndex = getShardIndex(code);
-        
-        unique_lock lock(shardMutexes[shardIndex]);
-        if (urlStore.find(code) == urlStore.end()) {
-            urlStore[code] = record;
-            break;
+        try {
+            if (db::insert_mapping(code, url, expiresAt)) {
+                break; // success
+            }
+        } catch (const std::exception& e) {
+            callback(createErrorResponse(string("db error: ") + e.what(), k500InternalServerError));
+            return;
         }
-        lock.unlock(); // Release before retry
         
         if (attempt == 4) {
             callback(createErrorResponse("collision", k500InternalServerError));
@@ -130,19 +139,23 @@ void UrlShortenerService::handleShorten(const HttpRequestPtr& req,
 void UrlShortenerService::handleInfo(const HttpRequestPtr& req, 
                                     function<void(const HttpResponsePtr&)>&& callback, 
                                     const string& code) const {
-    auto shardIndex = getShardIndex(code);
-    shared_lock lock(shardMutexes[shardIndex]);
-    auto it = urlStore.find(code);
-    
-    if (it == urlStore.end() || it->second.isExpired()) {
+    string url;
+    bool ttl_active = false;
+    try {
+        if (!db::get_info(code, url, ttl_active)) {
+            callback(createErrorResponse("not found", k404NotFound));
+            return;
+        }
+    } catch (const std::exception& e) {
+        callback(createErrorResponse(string("db error: ") + e.what(), k500InternalServerError));
         callback(createErrorResponse("not found", k404NotFound));
         return;
     }
     
     Json::Value response;
     response["code"] = code;
-    response["url"] = it->second.originalUrl;
-    response["ttl_active"] = it->second.expiresAt.has_value();
+    response["url"] = url;
+    response["ttl_active"] = ttl_active;
     
     callback(createJsonResponse(response));
 }
@@ -150,16 +163,19 @@ void UrlShortenerService::handleInfo(const HttpRequestPtr& req,
 void UrlShortenerService::handleResolve(const HttpRequestPtr& req, 
                                        function<void(const HttpResponsePtr&)>&& callback, 
                                        const string& code) const {
-    auto shardIndex = getShardIndex(code);
-    shared_lock lock(shardMutexes[shardIndex]);
-    auto it = urlStore.find(code);
-    
-    if (it == urlStore.end() || it->second.isExpired()) {
+    std::string url;
+    try {
+        if (!db::get_mapping(code, url)) {
+            auto resp = HttpResponse::newHttpResponse();
+            resp->setStatusCode(k404NotFound);
+            callback(resp);
+            return;
+        }
+    } catch (const std::exception& e) {
         auto resp = HttpResponse::newHttpResponse();
-        resp->setStatusCode(k404NotFound);
+        resp->setStatusCode(k500InternalServerError);
         callback(resp);
         return;
     }
-    
-    callback(HttpResponse::newRedirectionResponse(it->second.originalUrl));
+    callback(HttpResponse::newRedirectionResponse(url));
 }
