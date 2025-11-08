@@ -76,12 +76,22 @@ helm upgrade --install ingress-nginx ingress-nginx/ingress-nginx \
   --set controller.resources.limits.memory=256Mi \
   --wait
 
-# 7) Deploy app manifests (ClusterIP service, Deployment)
+# 7) Create/update external PostgreSQL secret (expects DATABASE_URL defined externally or passed as ENV)
+if [ -z "${DATABASE_URL:-}" ]; then
+  log "DATABASE_URL not set; please export a production connection string (sslmode=require)."
+  log "Example: export DATABASE_URL=postgres://app:password@host:5432/urlshortener?sslmode=require"
+  exit 3
+fi
+log "Applying external-postgres secret"
+kubectl create secret generic external-postgres \
+  --from-literal=DATABASE_URL="${DATABASE_URL}" \
+  -o yaml --dry-run=client | kubectl apply -f -
+
+# 8) Deploy app manifests (ClusterIP service, Deployment, Ingress)
 log "Applying app manifests"
 kubectl apply -f k8s/service.yaml
 kubectl apply -f k8s/deployment.yaml
 
-# 8) Point the Deployment at the pushed ACR image
 log "Setting image to ${ACR_LOGIN_SERVER}/url-shortener:${TAG}"
 kubectl set image deployment/url-shortener url-shortener="${ACR_LOGIN_SERVER}/url-shortener:${TAG}"
 
