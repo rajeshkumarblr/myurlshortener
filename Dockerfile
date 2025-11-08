@@ -15,20 +15,24 @@ RUN apt-get update && apt-get install -y \
     libssl-dev \
     zlib1g-dev \
     libc-ares-dev \
-    libbrotli-dev \
+  libbrotli-dev \
+  libpq-dev \
   && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /src
 
-# Clone the application repo (and vendored dependencies) directly
-ARG REPO_URL=https://github.com/rajeshkumarblr/myurlshortener
-ARG REF=main
-RUN git clone --depth 1 --branch "${REF}" --recurse-submodules "${REPO_URL}" .
+# Use local source (copied from build context)
+COPY . /src
 
-# If Drogon source is not present in the repo, fetch upstream
+# Ensure previous host-side build caches don't interfere
+RUN rm -rf /src/build /src/drogon/build || true
+
+# If Drogon source is not present in the repo, fetch a pinned upstream tag.
+# Note: when the vendored `drogon/` directory exists in this repo, it is used as-is.
+# To update Drogon, either update the vendored source or set a new tag here.
 ARG DROGON_REF=v1.9.6
 RUN if [ -d /src/drogon ]; then \
-      echo "Using vendored Drogon"; \
+      echo "Using vendored Drogon source in repo (override pin ${DROGON_REF})"; \
     else \
       echo "Fetching Drogon ${DROGON_REF} from upstream"; \
       git clone --depth 1 --branch "${DROGON_REF}" https://github.com/drogonframework/drogon.git /src/drogon; \
@@ -57,6 +61,7 @@ RUN apt-get update && apt-get install -y \
     zlib1g \
     libc-ares2 \
     libbrotli1 \
+  libpq5 \
     curl \
   && rm -rf /var/lib/apt/lists/*
 
