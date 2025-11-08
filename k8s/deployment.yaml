@@ -5,6 +5,11 @@ metadata:
   labels:
     app: url-shortener
 spec:
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 0
+      maxUnavailable: 1
   replicas: 1
   selector:
     matchLabels:
@@ -13,7 +18,9 @@ spec:
     metadata:
       labels:
         app: url-shortener
+        component: app
     spec:
+      terminationGracePeriodSeconds: 5
       containers:
         - name: url-shortener
           image: url-shortener:kind
@@ -21,12 +28,19 @@ spec:
           ports:
             - name: http
               containerPort: 9090
+          envFrom:
+            - secretRef:
+                name: external-postgres
           env:
             - name: APP_PORT
               value: "9090"
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: external-postgres
+                  key: DATABASE_URL
           livenessProbe:
-            httpGet:
-              path: /api/v1/health
+            tcpSocket:
               port: 9090
             initialDelaySeconds: 5
             periodSeconds: 10

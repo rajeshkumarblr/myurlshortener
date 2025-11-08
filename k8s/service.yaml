@@ -8,6 +8,7 @@ spec:
   type: ClusterIP
   selector:
     app: url-shortener
+    component: app
   ports:
     - name: http
       port: 9090
