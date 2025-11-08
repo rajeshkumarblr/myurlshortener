@@ -134,6 +134,29 @@ The service is designed for production use with:
 - Resource cleanup and TTL management
 - Daemon mode operation
 
+## Kubernetes (Kind) Quickstart
+
+See `k8s/README.md` for full details. The short version:
+
+```bash
+# Build and deploy to Kind (creates DB secret automatically)
+bash k8s/deploy-kind.sh
+
+# If NodePort isn't reachable, port-forward the service
+kubectl port-forward svc/url-shortener 9090:9090
+
+# Health and shorten
+curl -s http://localhost:9090/api/v1/health
+curl -s -X POST -H 'Content-Type: application/json' \
+  -d '{"url":"https://example.com","ttl":120}' \
+  http://localhost:9090/api/v1/shorten
+```
+
+Notes:
+- The app uses an external Postgres via `DATABASE_URL` set in secret `external-postgres`.
+- Liveness probe is TCP; readiness checks `/api/v1/health` and includes a DB ping.
+- For cloud DBs, prefer `sslmode=require`.
+
 ## License
 
 This project is licensed under the MIT License - see the LICENSE file for details.
