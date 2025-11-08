@@ -1,0 +1,18 @@
+# Ignore local build outputs and VCS metadata
+build/
+.dockerignore
+.git
+.gitignore
+.drogon_ctl*
+CMakeCache.txt
+CMakeFiles/
+*.o
+*.obj
+*.a
+*.so
+*.dll
+*.dylib
+**/.vscode/
+**/.idea/
+**/__pycache__/
+**/.DS_Store
