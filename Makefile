@@ -87,6 +87,33 @@ setup: configure build
 # Rebuild and restart server
 rebuild: build stop run
 
+# Docker + Kind helpers
+.PHONY: docker kind-deploy kind-clean port-forward logs psql
+
+docker:
+	@echo "Building Docker image url-shortener:kind"
+	docker build -t url-shortener:kind .
+
+kind-deploy: docker
+	@echo "Deploying to Kind via k8s/deploy-kind.sh"
+	bash k8s/deploy-kind.sh
+
+kind-clean:
+	@echo "Deleting K8s resources labeled app=url-shortener"
+	kubectl delete all -l app=url-shortener --ignore-not-found
+
+port-forward:
+	@echo "Port-forwarding svc/url-shortener to localhost:9090"
+	kubectl port-forward svc/url-shortener 9090:9090
+
+logs:
+	@echo "Tailing app logs"
+	kubectl logs -l app=url-shortener -f --tail=200
+
+psql:
+	@echo "Opening psql to local Postgres"
+	PGPASSWORD=appsecret psql -h 127.0.0.1 -U app -d urlshortener
+
 # Help
 help:
 	@echo "Available targets:"
@@ -101,6 +128,14 @@ help:
 	@echo "  rebuild    - Build, stop old server, start new server"
 	@echo "  test       - Build, restart server, run API tests"
 	@echo "  setup      - Configure and build (first time)"
+	@echo ""
+	@echo "Kubernetes helpers:"
+	@echo "  docker      - Build Docker image url-shortener:kind"
+	@echo "  kind-deploy - Build + deploy to local Kind"
+	@echo "  kind-clean  - Delete app resources"
+	@echo "  port-forward- Forward svc/url-shortener:9090 to localhost:9090"
+	@echo "  logs        - Tail K8s app logs"
+	@echo "  psql        - psql into local Postgres"
 	@echo "  help       - Show this help"
 	@echo ""
 	@echo "Server management:"
