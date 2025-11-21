@@ -5,14 +5,12 @@ using namespace std;
 using namespace drogon;
 
 int main() {
+    // Get app reference and load config before constructing services so they see custom settings
+    auto& app = drogon::app();
+    app.loadConfigFile("config.json");
+
     // Create service instance
     auto urlService = make_shared<UrlShortenerService>();
-    
-    // Get app reference
-    auto& app = drogon::app();
-    
-    // Load configuration
-    app.loadConfigFile("config.json");
     
     // Register routes with proper C++ member function binding
     app.registerHandler("/api/v1/health", 

@@ -24,8 +24,18 @@ UrlShortenerService::UrlShortenerService() {
 void UrlShortenerService::loadConfiguration() {
     try {
         auto& appConfig = drogon::app().getCustomConfig();
+        const Json::Value* baseNode = nullptr;
         if (appConfig.isMember("base_url") && appConfig["base_url"].isString()) {
-            baseUrl = appConfig["base_url"].asString();
+            baseNode = &appConfig["base_url"];
+        } else if (appConfig.isMember("app") && appConfig["app"].isObject()) {
+            const auto& appSection = appConfig["app"];
+            if (appSection.isMember("base_url") && appSection["base_url"].isString()) {
+                baseNode = &appSection["base_url"];
+            }
+        }
+
+        if (baseNode != nullptr) {
+            baseUrl = baseNode->asString();
         }
     } catch (const exception& e) {
         // If config loading fails, use fallback in getBaseUrl()
@@ -59,6 +69,11 @@ string UrlShortenerService::getBaseUrl() const {
     }
     
     // Fallback to environment variable or default
+    if (const char* envBase = getenv("BASE_URL")) {
+        if (*envBase) {
+            return string(envBase);
+        }
+    }
     const char* portEnv = getenv("APP_PORT");
     string port = portEnv ? portEnv : "9090";
     return "http://localhost:" + port;

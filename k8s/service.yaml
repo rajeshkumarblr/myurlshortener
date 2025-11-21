@@ -5,11 +5,11 @@ metadata:
   labels:
     app: url-shortener
 spec:
-  type: ClusterIP
+  type: LoadBalancer
   selector:
     app: url-shortener
     component: app
   ports:
     - name: http
-      port: 9090
+      port: 80
       targetPort: 9090
