@@ -70,9 +70,10 @@ WORKDIR /app
 # Non-root user
 RUN groupadd -r appuser && useradd -r -g appuser appuser
 
-# Copy compiled binary and config
+# Copy compiled binary, config, and static assets
 COPY --from=builder /src/build/url_shortener /app/
 COPY --from=builder /src/config.json /app/
+COPY --from=builder /src/public /app/public
 
 # Copy Drogon/Trantor shared libraries
 COPY --from=builder /usr/local/lib/libdrogon* /usr/local/lib/

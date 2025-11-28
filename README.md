@@ -8,6 +8,7 @@ A high-performance URL shortener built with C++ and the Drogon web framework.
 - **TTL Support**: URLs can expire automatically after a specified time
 - **High Concurrency**: Sharded mutex design for optimal multi-threaded performance
 - **RESTful API**: Clean HTTP endpoints for all operations
+- **Simple Web UI**: Built-in HTML page for manual shortening
 - **Collision Handling**: Automatic retry mechanism for hash collisions
 
 ## API Endpoints
@@ -61,6 +62,8 @@ make stop
 ```
 
 The service will be available at `http://localhost:9090`
+
+Open `http://localhost:9090/` in a browser to use the built-in UI form for shortening links manually.
 
 ## Architecture
 

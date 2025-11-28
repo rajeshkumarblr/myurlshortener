@@ -6,6 +6,9 @@
 namespace db {
 using TimePoint = std::chrono::time_point<std::chrono::system_clock>;
 
+// Optionally override connection URI before init(); clears on empty string.
+void set_connection_uri(const std::string& uri);
+
 // Initialize connection pool and ensure schema exists.
 void init();
 

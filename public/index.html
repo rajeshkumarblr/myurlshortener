@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>URL Shortener</title>
+  <style>
+    body { font-family: Arial, sans-serif; margin: 2rem; color: #1f2933; }
+    h1 { margin-bottom: 0.5rem; }
+    form { display: flex; flex-direction: column; max-width: 420px; gap: 0.75rem; }
+    input[type="url"] { padding: 0.75rem; font-size: 1rem; border: 1px solid #cbd5e0; border-radius: 6px; }
+    button { padding: 0.75rem; font-size: 1rem; border: none; border-radius: 6px; background: #2563eb; color: white; cursor: pointer; }
+    button:disabled { opacity: 0.6; cursor: not-allowed; }
+    .result { margin-top: 1rem; font-size: 1rem; }
+    .error { color: #c53030; }
+  </style>
+</head>
+<body>
+  <h1>URL Shortener</h1>
+  <p>Paste any URL below and get a shortened link instantly.</p>
+  <form id="shorten-form">
+    <input type="url" id="long-url" placeholder="https://example.com" required />
+    <button type="submit" id="submit-btn">Shorten</button>
+  </form>
+  <div id="status" class="result"></div>
+  <script>
+    const form = document.getElementById('shorten-form');
+    const longUrlInput = document.getElementById('long-url');
+    const statusEl = document.getElementById('status');
+    const submitBtn = document.getElementById('submit-btn');
+
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      statusEl.textContent = '';
+      submitBtn.disabled = true;
+      try {
+        const response = await fetch('/api/v1/shorten', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ url: longUrlInput.value })
+        });
+        if (!response.ok) {
+          const err = await response.json().catch(() => ({ error: 'Unexpected error' }));
+          throw new Error(err.error || 'Failed to shorten URL');
+        }
+        const data = await response.json();
+        const safeUrl = data.short;
+        statusEl.className = 'result';
+        statusEl.innerHTML = `Short URL: <a href="${safeUrl}" target="_blank" rel="noopener">${safeUrl}</a>`;
+      } catch (err) {
+        statusEl.className = 'result error';
+        statusEl.textContent = err.message;
+      } finally {
+        submitBtn.disabled = false;
+      }
+    });
+  </script>
+</body>
+</html>

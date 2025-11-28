@@ -24,18 +24,36 @@ UrlShortenerService::UrlShortenerService() {
 void UrlShortenerService::loadConfiguration() {
     try {
         auto& appConfig = drogon::app().getCustomConfig();
-        const Json::Value* baseNode = nullptr;
-        if (appConfig.isMember("base_url") && appConfig["base_url"].isString()) {
-            baseNode = &appConfig["base_url"];
+        auto readString = [](const Json::Value& node, const char* field) -> std::string {
+            if (node.isMember(field) && node[field].isString()) {
+                return node[field].asString();
+            }
+            return {};
+        };
+
+        if (auto direct = readString(appConfig, "base_url"); !direct.empty()) {
+            baseUrl = direct;
         } else if (appConfig.isMember("app") && appConfig["app"].isObject()) {
-            const auto& appSection = appConfig["app"];
-            if (appSection.isMember("base_url") && appSection["base_url"].isString()) {
-                baseNode = &appSection["base_url"];
+            if (auto nested = readString(appConfig["app"], "base_url"); !nested.empty()) {
+                baseUrl = nested;
             }
         }
 
-        if (baseNode != nullptr) {
-            baseUrl = baseNode->asString();
+        std::string dbUrl;
+        if (auto directDb = readString(appConfig, "database_url"); !directDb.empty()) {
+            dbUrl = directDb;
+        } else if (appConfig.isMember("database") && appConfig["database"].isObject()) {
+            if (auto nestedDb = readString(appConfig["database"], "url"); !nestedDb.empty()) {
+                dbUrl = nestedDb;
+            }
+        } else if (appConfig.isMember("app") && appConfig["app"].isObject()) {
+            if (auto nestedDb = readString(appConfig["app"], "database_url"); !nestedDb.empty()) {
+                dbUrl = nestedDb;
+            }
+        }
+
+        if (!dbUrl.empty()) {
+            db::set_connection_uri(dbUrl);
         }
     } catch (const exception& e) {
         // If config loading fails, use fallback in getBaseUrl()

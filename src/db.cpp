@@ -9,8 +9,12 @@ namespace db {
 namespace {
 std::mutex g_mu;
 PGconn* g_conn = nullptr;
+std::string g_conninfo_override;
 
 std::string conninfo() {
+    if (!g_conninfo_override.empty()) {
+        return g_conninfo_override;
+    }
     // Prefer single connection string envs if present
     if (const char* uri = std::getenv("DATABASE_URL")) {
         return std::string(uri); // postgres://user:pass@host:port/db?params
@@ -54,6 +58,15 @@ void exec_ddl_locked(const char* sql) {
     }
     PQclear(res);
 }
+}
+
+void set_connection_uri(const std::string& uri) {
+    std::lock_guard<std::mutex> lk(g_mu);
+    g_conninfo_override = uri;
+    if (g_conn) {
+        PQfinish(g_conn);
+        g_conn = nullptr;
+    }
 }
 
 void init() {

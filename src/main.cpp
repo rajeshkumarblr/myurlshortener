@@ -12,6 +12,13 @@ int main() {
     // Create service instance
     auto urlService = make_shared<UrlShortenerService>();
     
+    app.registerHandler("/", [](const HttpRequestPtr&, function<void(const HttpResponsePtr&)>&& cb) {
+        auto resp = HttpResponse::newFileResponse("public/index.html");
+        resp->setStatusCode(k200OK);
+        resp->setContentTypeCode(CT_TEXT_HTML);
+        cb(resp);
+    }, {Get});
+
     // Register routes with proper C++ member function binding
     app.registerHandler("/api/v1/health", 
         [urlService](const HttpRequestPtr& req, function<void(const HttpResponsePtr&)>&& callback) {
