@@ -13,6 +13,7 @@ add_executable(url_shortener
     src/UrlShortenerService.cpp
     src/utils.cpp
     src/controllers/AuthController.cpp
+    src/security/JwtService.cpp
     src/security/PasswordHasher.cpp
     src/services/AuthService.cpp
     src/services/DataStore.cpp

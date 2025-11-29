@@ -8,7 +8,7 @@ Production-ready Drogon (C++) service that issues short URLs behind authenticate
 
 ## Highlights
 
-- **Secure auth** – Registration/login APIs issue bearer tokens; Drogon filters enforce protected routes.
+- **Secure auth** – Registration/login APIs issue JWT bearer tokens; Drogon filters enforce protected routes.
 - **PostgreSQL storage** – Uses Drogon ORM with pooled connections, migrations, TTL enforcement, and metadata for each short code.
 - **Modern UI** – `public/index.html` now offers a login-first console with gated navigation, instant validation, and link management tools.
 - **Automated validation** – Python test suite hits every auth + shorten + redirect endpoint locally or against prod via `BASE_URL`.
@@ -74,7 +74,7 @@ xdg-open http://localhost:9090/
 | `DATABASE_URL` | Required. Standard Postgres URI (set as env var or `database.url`). |
 | `app.base_url` | Optional. Overrides host used when echoing `short` links (defaults to detected origin). |
 | `database.pool_size` | Optional connection pool override; defaults to 4. |
-| `jwt.secret`, `jwt.ttl_seconds` | Token signing secret + lifetime (configurable via Drogon config). |
+| `security.jwt_secret`, `security.jwt_ttl_seconds` | JWT signing secret + lifetime (env vars `JWT_SECRET`, `JWT_TTL_SECONDS`). |
 
 ## Using the APIs
 
@@ -90,7 +90,7 @@ All endpoints return JSON unless noted.
 | GET | `/{code}` | Redirects to the stored destination. |
 | GET | `/api/v1/health` | Health probe (checks DB connectivity). |
 
-Register/login responses include a bearer token; send it via `Authorization: Bearer <token>` (or the legacy `x-api-key`) on authenticated routes.
+Register/login responses include a JWT bearer token; send it via `Authorization: Bearer <token>` (or the legacy `x-api-key`) on authenticated routes.
 
 ### API Sequence Example (register → shorten → redirect)
 

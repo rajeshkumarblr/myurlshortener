@@ -39,6 +39,11 @@ spec:
                 secretKeyRef:
                   name: external-postgres
                   key: DATABASE_URL
+            - name: JWT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: external-postgres
+                  key: JWT_SECRET
           livenessProbe:
             tcpSocket:
               port: 9090

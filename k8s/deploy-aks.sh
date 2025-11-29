@@ -14,6 +14,8 @@ set -euo pipefail
 : "${TAG:=v$(date +%Y%m%d%H%M%S)}"
 : "${KEYVAULT_NAME:=}"
 : "${KV_SECRET_NAME:=}"
+: "${KV_JWT_SECRET_NAME:=}"
+: "${JWT_SECRET:=}"
 
 # Optional: create Azure Database for PostgreSQL Flexible Server automatically
 # If CREATE_PG=true, a dev-friendly public-access DB will be created.
@@ -29,7 +31,7 @@ usage() {
   cat <<EOF
 Usage: RG=... LOC=... AKS=... ACR=... TAG=... NODE_SIZE=Standard_B2s NODE_COUNT=1 \
   [CREATE_PG=true PG_NAME=... PG_ADMIN=... PG_PASSWORD=...] \
-  [KEYVAULT_NAME=kv-name KV_SECRET_NAME=secret-name] \
+  [KEYVAULT_NAME=kv-name KV_SECRET_NAME=pg-secret KV_JWT_SECRET_NAME=jwt-secret] \
   bash k8s/deploy-aks.sh
 
 Defaults:
@@ -38,7 +40,7 @@ Defaults:
 Optional PG (if CREATE_PG=true):
   PG_NAME=${PG_NAME} PG_VERSION=${PG_VERSION} PG_ADMIN=${PG_ADMIN} PG_PASSWORD=***
 Optional Key Vault:
-  KEYVAULT_NAME=${KEYVAULT_NAME:-<unset>} KV_SECRET_NAME=${KV_SECRET_NAME:-<unset>}
+  KEYVAULT_NAME=${KEYVAULT_NAME:-<unset>} KV_SECRET_NAME=${KV_SECRET_NAME:-<unset>} KV_JWT_SECRET_NAME=${KV_JWT_SECRET_NAME:-<unset>}
 EOF
 }
 
@@ -111,6 +113,20 @@ if [ -z "${DATABASE_URL:-}" ] && [ -n "${KEYVAULT_NAME}" ] && [ -n "${KV_SECRET_
   fi
 fi
 
+if [ -z "${JWT_SECRET:-}" ] && [ -n "${KEYVAULT_NAME}" ] && [ -n "${KV_JWT_SECRET_NAME}" ]; then
+  log "Fetching JWT_SECRET from Key Vault ${KEYVAULT_NAME}/${KV_JWT_SECRET_NAME}"
+  if ! JWT_SECRET=$(az keyvault secret show --vault-name "${KEYVAULT_NAME}" --name "${KV_JWT_SECRET_NAME}" --query value -o tsv 2>/tmp/kv_jwt.err); then
+    log "Failed to fetch JWT secret. Details: $(cat /tmp/kv_jwt.err)"
+    rm -f /tmp/kv_jwt.err
+    exit 4
+  fi
+  rm -f /tmp/kv_jwt.err
+  if [ -z "${JWT_SECRET}" ]; then
+    log "Secret ${KV_JWT_SECRET_NAME} in ${KEYVAULT_NAME} is empty."
+    exit 4
+  fi
+fi
+
 # 4) Build, tag, push image
 log "Building docker image and pushing to ACR: ${ACR_LOGIN_SERVER}/url-shortener:${TAG}"
 docker build -t url-shortener:aks .
@@ -129,9 +145,15 @@ if [ -z "${DATABASE_URL:-}" ]; then
   log "  export DATABASE_URL=postgres://app:password@host:5432/urlshortener?sslmode=require"
   exit 3
 fi
+
+if [ -z "${JWT_SECRET:-}" ]; then
+  log "JWT_SECRET not set. Provide via JWT_SECRET env var or Key Vault (KV_JWT_SECRET_NAME)."
+  exit 5
+fi
 log "Applying external-postgres secret"
 kubectl create secret generic external-postgres \
   --from-literal=DATABASE_URL="${DATABASE_URL}" \
+  --from-literal=JWT_SECRET="${JWT_SECRET}" \
   -o yaml --dry-run=client | kubectl apply -f -
 
 # 8) Deploy app manifests (ClusterIP service, Deployment, Ingress)

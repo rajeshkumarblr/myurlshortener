@@ -6,6 +6,8 @@
 #include <optional>
 #include <string>
 
+class JwtService;
+
 class AuthService {
 public:
     struct UserContext {
@@ -19,7 +21,8 @@ public:
         std::string token;
     };
 
-    explicit AuthService(std::shared_ptr<DataStore> store);
+    AuthService(std::shared_ptr<DataStore> store,
+                std::shared_ptr<JwtService> jwtService);
 
     LoginResult registerUser(const std::string& name,
                              const std::string& email,
@@ -34,6 +37,7 @@ public:
 
 private:
     std::shared_ptr<DataStore> store_;
+    std::shared_ptr<JwtService> jwtService_;
 
     static std::string normalizeEmail(std::string email);
     static std::string trim(std::string value);

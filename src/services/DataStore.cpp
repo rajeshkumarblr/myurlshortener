@@ -96,35 +96,6 @@ long DataStore::createUser(const std::string& name,
     return res[0]["id"].as<long>();
 }
 
-std::string DataStore::createToken(long userId, const std::string& label) const {
-    auto res = client_->execSqlSync(
-        "INSERT INTO api_token(user_id,label) VALUES($1,$2) RETURNING token",
-        userId,
-        label);
-    return res[0]["token"].as<std::string>();
-}
-
-std::optional<DataStore::UserRecord> DataStore::findUserByToken(const std::string& token) const {
-    auto res = client_->execSqlSync(
-        "SELECT u.id,u.name,u.email,u.password_hash FROM app_user u INNER JOIN api_token t ON t.user_id=u.id WHERE t.token=$1",
-        token);
-    if (res.empty()) {
-        return std::nullopt;
-    }
-    UserRecord user;
-    user.id = res[0]["id"].as<long>();
-    user.name = res[0]["name"].as<std::string>();
-    user.email = res[0]["email"].as<std::string>();
-    user.passwordHash = res[0]["password_hash"].as<std::string>();
-    return user;
-}
-
-void DataStore::touchToken(const std::string& token) const {
-    client_->execSqlSync(
-        "UPDATE api_token SET last_used_at = NOW() WHERE token=$1",
-        token);
-}
-
 std::vector<DataStore::UrlListItem> DataStore::listUrlsForUser(long userId,
                                                                size_t limit) const {
     auto res = client_->execSqlSync(

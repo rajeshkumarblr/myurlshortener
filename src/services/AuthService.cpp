@@ -1,5 +1,6 @@
 #include "AuthService.h"
 #include "ServiceError.h"
+#include "../security/JwtService.h"
 #include "../security/PasswordHasher.h"
 #include <drogon/drogon.h>
 #include <algorithm>
@@ -7,10 +8,15 @@
 
 using drogon::HttpStatusCode;
 
-AuthService::AuthService(std::shared_ptr<DataStore> store)
-    : store_(std::move(store)) {
+AuthService::AuthService(std::shared_ptr<DataStore> store,
+                         std::shared_ptr<JwtService> jwtService)
+    : store_(std::move(store)),
+      jwtService_(std::move(jwtService)) {
     if (!store_) {
         throw std::runtime_error("DataStore dependency missing");
+    }
+    if (!jwtService_) {
+        throw std::runtime_error("JwtService dependency missing");
     }
 }
 
@@ -26,11 +32,12 @@ AuthService::LoginResult AuthService::registerUser(const std::string& name,
         throw ServiceError(HttpStatusCode::k409Conflict, "email already exists");
     }
 
+    auto cleanedName = trim(name);
     auto hashed = PasswordHasher::hash(password);
-    auto userId = store_->createUser(trim(name), normalizedEmail, hashed);
-    auto token = store_->createToken(userId, "default");
+    auto userId = store_->createUser(cleanedName, normalizedEmail, hashed);
+    UserContext ctx{userId, cleanedName, normalizedEmail};
+    auto token = jwtService_->issueToken(userId, ctx.name, ctx.email);
 
-    UserContext ctx{userId, trim(name), normalizedEmail};
     return LoginResult{ctx, token};
 }
 
@@ -45,7 +52,7 @@ AuthService::LoginResult AuthService::login(const std::string& email,
     if (!PasswordHasher::verify(password, user->passwordHash)) {
         throw ServiceError(HttpStatusCode::k401Unauthorized, "invalid credentials");
     }
-    auto token = store_->createToken(user->id, "login");
+    auto token = jwtService_->issueToken(user->id, user->name, user->email);
     UserContext ctx{user->id, user->name, user->email};
     return LoginResult{ctx, token};
 }
@@ -57,15 +64,14 @@ std::optional<AuthService::UserContext> AuthService::authenticate(
     if (!token) {
         return std::nullopt;
     }
-    auto user = store_->findUserByToken(*token);
-    if (!user) {
+    auto claims = jwtService_->verify(*token);
+    if (!claims) {
         return std::nullopt;
     }
-    store_->touchToken(*token);
     if (rawToken) {
         *rawToken = *token;
     }
-    return UserContext{user->id, user->name, user->email};
+    return UserContext{claims->userId, claims->name, claims->email};
 }
 
 std::string AuthService::normalizeEmail(std::string email) {

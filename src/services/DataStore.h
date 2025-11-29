@@ -46,10 +46,6 @@ public:
                     const std::string& email,
                     const std::string& passwordHash);
 
-    std::string createToken(long userId, const std::string& label) const;
-    std::optional<UserRecord> findUserByToken(const std::string& token) const;
-    void touchToken(const std::string& token) const;
-
     std::vector<UrlListItem> listUrlsForUser(long userId,
                                              size_t limit) const;
 
