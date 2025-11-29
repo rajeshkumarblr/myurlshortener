@@ -12,6 +12,8 @@ set -euo pipefail
 : "${NODE_SIZE:=Standard_B2s}"      # low-cost VM
 : "${NODE_COUNT:=1}"
 : "${TAG:=v$(date +%Y%m%d%H%M%S)}"
+: "${KEYVAULT_NAME:=}"
+: "${KV_SECRET_NAME:=}"
 
 # Optional: create Azure Database for PostgreSQL Flexible Server automatically
 # If CREATE_PG=true, a dev-friendly public-access DB will be created.
@@ -27,6 +29,7 @@ usage() {
   cat <<EOF
 Usage: RG=... LOC=... AKS=... ACR=... TAG=... NODE_SIZE=Standard_B2s NODE_COUNT=1 \
   [CREATE_PG=true PG_NAME=... PG_ADMIN=... PG_PASSWORD=...] \
+  [KEYVAULT_NAME=kv-name KV_SECRET_NAME=secret-name] \
   bash k8s/deploy-aks.sh
 
 Defaults:
@@ -34,6 +37,8 @@ Defaults:
   NODE_SIZE=${NODE_SIZE} NODE_COUNT=${NODE_COUNT}
 Optional PG (if CREATE_PG=true):
   PG_NAME=${PG_NAME} PG_VERSION=${PG_VERSION} PG_ADMIN=${PG_ADMIN} PG_PASSWORD=***
+Optional Key Vault:
+  KEYVAULT_NAME=${KEYVAULT_NAME:-<unset>} KV_SECRET_NAME=${KV_SECRET_NAME:-<unset>}
 EOF
 }
 
@@ -90,6 +95,20 @@ if [ "${CREATE_PG}" = "true" ]; then
   export DATABASE_URL="postgres://${PG_ADMIN}:${PG_PASSWORD}@${PG_FQDN}:5432/urlshortener?sslmode=require"
   log "DATABASE_URL set for deployment (admin-based, dev only)."
   log "IMPORTANT: Restrict firewall and create a dedicated app user for production."
+fi
+
+if [ -z "${DATABASE_URL:-}" ] && [ -n "${KEYVAULT_NAME}" ] && [ -n "${KV_SECRET_NAME}" ]; then
+  log "Fetching DATABASE_URL from Key Vault ${KEYVAULT_NAME}/${KV_SECRET_NAME}"
+  if ! DATABASE_URL=$(az keyvault secret show --vault-name "${KEYVAULT_NAME}" --name "${KV_SECRET_NAME}" --query value -o tsv 2>/tmp/kv.err); then
+    log "Failed to fetch secret. Details: $(cat /tmp/kv.err)"
+    rm -f /tmp/kv.err
+    exit 4
+  fi
+  rm -f /tmp/kv.err
+  if [ -z "${DATABASE_URL}" ]; then
+    log "Secret ${KV_SECRET_NAME} in ${KEYVAULT_NAME} is empty."
+    exit 4
+  fi
 fi
 
 # 4) Build, tag, push image

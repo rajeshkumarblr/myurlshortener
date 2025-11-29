@@ -1,165 +1,189 @@
 # URL Shortener Service
 
-A high-performance URL shortener built with C++ and the Drogon web framework.
+Production-ready Drogon (C++) service that issues short URLs behind authenticated APIs, persists data in PostgreSQL, and ships with a polished HTML dashboard plus automated smoke tests.
 
-## Features
+- **Live demo**: https://urlshortener-demo.westus3.cloudapp.azure.com
+- **Latest deploy**: AKS cluster `aks-urlshortener` in `rg-urlshortener-wus3` (Azure West US 3)
+- **Status**: ✅ Stable — backend, UI, and automated tests are all green (see `scripts/api_test_suite.py`).
 
-- **Fast URL Shortening**: Generate short codes using optimized Base62 encoding
-- **TTL Support**: URLs can expire automatically after a specified time
-- **High Concurrency**: Sharded mutex design for optimal multi-threaded performance
-- **RESTful API**: Clean HTTP endpoints for all operations
-- **Simple Web UI**: Built-in HTML page for manual shortening
-- **Collision Handling**: Automatic retry mechanism for hash collisions
+## Highlights
 
-## API Endpoints
+- **Secure auth** – Registration/login APIs issue bearer tokens; Drogon filters enforce protected routes.
+- **PostgreSQL storage** – Uses Drogon ORM with pooled connections, migrations, TTL enforcement, and metadata for each short code.
+- **Modern UI** – `public/index.html` now offers a login-first console with gated navigation, instant validation, and link management tools.
+- **Automated validation** – Python test suite hits every auth + shorten + redirect endpoint locally or against prod via `BASE_URL`.
+- **Cloud deployment** – Single command (`k8s/deploy-aks.sh`) builds the container, pushes to Azure Container Registry, and rolls out to AKS with external Postgres wiring.
 
-### Create Short URL
-```bash
-POST /api/shorten
-Content-Type: application/json
+## Architecture Overview
 
-{
-  "url": "https://example.com",
-  "ttl": 3600  // optional, seconds
-}
-```
+```text
+                 ┌─────────────────────────────┐
+                 │  Browser / Static Console   │
+                 │  (public/index.html)        │
+                 └──────────────┬──────────────┘
+                                │ HTTPS
+                                ▼
+                 ┌─────────────────────────────┐
+                 │ Azure Load Balancer (AKS)   │
+                 │ k8s Service: url-shortener  │
+                 └──────────────┬──────────────┘
+                                │ ClusterIP
+                                ▼
+                 ┌─────────────────────────────┐
+                 │ AKS Node (Standard_B2s)     │
+                 │  └─ Pod: Drogon container   │
+                 │        - Controllers        │
+                 │        - Services           │
+                 │        - Static assets      │
+                 └──────────────┬──────────────┘
+                                │ libpq over TLS
+                                ▼
+            ┌────────────────────────────────────────┐
+            │ Azure Database for PostgreSQL Flexible │
+            │  - urlshortener schema                 │
+            │  - managed backups + SSL               │
+            └────────────────────────────────────────┘
 
-### Get URL Info
-```bash
-GET /api/info/{code}
-```
-
-### Redirect to Original URL
-```bash
-GET /{code}
-```
-
-### Health Check
-```bash
-GET /api/health
+ACR (Azure Container Registry) stores the built images that AKS pulls during rollouts,
+and `k8s/deploy-aks.sh` wires the `external-postgres` secret carrying `DATABASE_URL`.
 ```
 
 ## Quick Start
 
-### Prerequisites
-- C++17 compatible compiler
-- CMake 3.10+
-- Drogon web framework
-
-### Build and Run
 ```bash
-# Build the project
-make build
+# Clone and build
+cmake -S . -B build
+cmake --build build -j
 
-# Start the server
-make run
+# Provide Postgres connection
+export DATABASE_URL='postgres://user:pass@host:5432/urlshortener?sslmode=require'
 
-# Run tests
-make test
+# Run Drogon server
+./build/url_shortener
 
-# Stop the server
-make stop
+# Open UI
+xdg-open http://localhost:9090/
 ```
 
-The service will be available at `http://localhost:9090`
+### Configuration
 
-Open `http://localhost:9090/` in a browser to use the built-in UI form for shortening links manually.
+`config.json` + environment variables drive runtime behavior:
 
-## Architecture
+| Setting | Description |
+| --- | --- |
+| `DATABASE_URL` | Required. Standard Postgres URI (set as env var or `database.url`). |
+| `app.base_url` | Optional. Overrides host used when echoing `short` links (defaults to detected origin). |
+| `database.pool_size` | Optional connection pool override; defaults to 4. |
+| `jwt.secret`, `jwt.ttl_seconds` | Token signing secret + lifetime (configurable via Drogon config). |
 
-### Components
+## Using the APIs
 
-- **UrlShortenerService**: Core business logic with thread-safe operations
-- **Base62 Encoder**: Optimized encoding for generating short codes
-- **Sharded Mutex**: 16-way mutex sharding for improved concurrency
+All endpoints return JSON unless noted.
 
-### Performance Characteristics
+| Method | Path | Notes |
+| --- | --- | --- |
+| POST | `/api/v1/register` | `{"name","email","password"}` → `{ user_id, name, email, token }` |
+| POST | `/api/v1/login` | Issues a fresh token for `{ "email","password" }` |
+| POST | `/api/v1/shorten` | Auth required (`Authorization: Bearer <token>`). Body: `{ "url", "ttl"? }` |
+| GET | `/api/v1/urls` | Auth required. Lists caller’s links with timestamps + expiry. |
+| GET | `/api/v1/info/{code}` | Public metadata for any code. |
+| GET | `/{code}` | Redirects to the stored destination. |
+| GET | `/api/v1/health` | Health probe (checks DB connectivity). |
 
-- **Encoding Speed**: ~10ns per Base62 operation
-- **Concurrency**: 16x better than global mutex through sharding
-- **Memory Efficient**: Simple in-memory storage with TTL cleanup
+Register/login responses include a bearer token; send it via `Authorization: Bearer <token>` (or the legacy `x-api-key`) on authenticated routes.
 
-### File Structure
+### API Sequence Example (register → shorten → redirect)
 
+```text
+User Browser              Drogon API Pod               PostgreSQL
+  |  POST /register        |                              |
+  |----------------------->| create user + hash password |  INSERT INTO users
+  |                        |---------------------------->|  (returns id)
+  |                        |<----------------------------|  OK
+  |<-----------------------| 201 {token}
+  |
+  |  POST /shorten (token) |                              |
+  |----------------------->| validate + create code       |
+  |                        |---------------------------->| INSERT INTO links
+  |                        |<----------------------------| OK
+  |<-----------------------| 201 {code, short URL}
+  |
+  |  GET /{code}           |                              |
+  |----------------------->| lookup code                  |
+  |                        |---------------------------->| SELECT ... WHERE code
+  |                        |<----------------------------| destination URL
+  |<-----------------------| 302 Location: original URL
 ```
-src/
-├── main.cpp                    # Application entry point
-├── UrlShortenerService.h       # Service interface
-├── UrlShortenerService.cpp     # Service implementation
-├── utils.h                     # Base62 encoding utilities
-└── utils.cpp                   # Utility implementations
-```
-
-## Configuration
-
-Edit `config.json` to modify server settings:
-
-```json
-{
-  "listeners": [
-    {
-      "address": "0.0.0.0",
-      "port": 9090,
-      "https": false
-    }
-  ],
-  "threads_num": 4,
-  "log": {
-    "log_path": "./",
-    "logfile_base_name": "server",
-    "log_size_limit": 100000000
-  }
-}
-```
-
-## Development
-
-### Building
-The project uses CMake for compilation and includes VS Code configuration for development.
-
-### Testing
-Comprehensive API tests are included covering:
-- URL shortening and retrieval
-- TTL functionality
-- Error handling
-- Edge cases
-
-### Performance Notes
-- Base62 encoding benchmarked against multiple algorithms
-- Sharded mutex provides optimal concurrency without complexity
-- Simple division-based encoding outperforms complex lookup tables
-
-## Production Deployment
-
-The service is designed for production use with:
-- Proper error handling and HTTP status codes
-- Concurrent request handling
-- Resource cleanup and TTL management
-- Daemon mode operation
-
-## Kubernetes (Kind) Quickstart
-
-See `k8s/README.md` for full details. The short version:
 
 ```bash
-# Build and deploy to Kind (creates DB secret automatically)
-bash k8s/deploy-kind.sh
+TOKEN=$(curl -s -X POST http://localhost:9090/api/v1/register \
+  -H 'Content-Type: application/json' \
+  -d '{"name":"Demo","email":"demo@example.com","password":"SecretPwd1"}' | jq -r '.token')
 
-# If NodePort isn't reachable, port-forward the service
-kubectl port-forward svc/url-shortener 9090:9090
+curl -s -X POST http://localhost:9090/api/v1/shorten \
+  -H "Authorization: Bearer ${TOKEN}" \
+  -H 'Content-Type: application/json' \
+  -d '{"url":"https://example.com","ttl":600}'
 
-# Health and shorten
-curl -s http://localhost:9090/api/v1/health
-curl -s -X POST -H 'Content-Type: application/json' \
-  -d '{"url":"https://example.com","ttl":120}' \
-  http://localhost:9090/api/v1/shorten
+curl -s -H "Authorization: Bearer ${TOKEN}" http://localhost:9090/api/v1/urls
 ```
 
-Notes:
-- The app uses an external Postgres via `DATABASE_URL` set in secret `external-postgres`.
-- Liveness probe is TCP; readiness checks `/api/v1/health` and includes a DB ping.
-- For cloud DBs, prefer `sslmode=require`.
+## Testing
+
+```
+python3 -m venv .venv && source .venv/bin/activate
+pip install -r scripts/requirements.txt
+
+# Local server
+BASE_URL=http://localhost:9090 python scripts/api_test_suite.py
+
+# Against prod (AKS)
+BASE_URL=http://4.249.87.222 python scripts/api_test_suite.py
+```
+
+The suite performs health → register/login → shorten/list/info/redirect checks and fails fast on regressions.
+
+## Deployment
+
+```
+DATABASE_URL='postgres://.../urlshortener?sslmode=require' \
+  bash k8s/deploy-aks.sh
+```
+
+What the script does:
+
+1. Ensures Azure resource group, AKS cluster, and ACR (Basic SKU) exist.
+2. Builds the Docker image using the repo’s multi-stage Dockerfile.
+3. Pushes to ACR and wires AKS with `external-postgres` secret containing `DATABASE_URL`.
+4. Applies `k8s/deployment.yaml` + `k8s/service.yaml`, waits for rollout, and prints the LoadBalancer endpoint.
+
+### Pulling secrets from Azure Key Vault
+
+Keep the PostgreSQL URI out of local shells by storing it as a Key Vault secret and letting the script retrieve it automatically:
+
+```bash
+az keyvault create -n kv-urlshortener -g rg-urlshortener-wus3 -l westus3
+az keyvault secret set -n pg-urlshortener -o tsv \
+  --vault-name kv-urlshortener \
+  --value 'postgres://user:pass@pg-urlshortener.postgres.database.azure.com:5432/urlshortener?sslmode=require'
+
+KEYVAULT_NAME=kv-urlshortener KV_SECRET_NAME=pg-urlshortener \
+  bash k8s/deploy-aks.sh
+```
+
+`DATABASE_URL` is still honored if exported, and `CREATE_PG=true` can provision a dev Postgres automatically. If neither applies, providing `KEYVAULT_NAME` + `KV_SECRET_NAME` is the preferred secure path.
+
+Re-run the Python smoke suite pointing at the returned hostname or the friendly DNS (`urlshortener-demo.westus3.cloudapp.azure.com`).
+
+## Repository Layout
+
+| Path | Purpose |
+| --- | --- |
+| `src/` | Drogon services, controllers, helper utilities. |
+| `public/index.html` | Auth-aware dashboard served by Drogon. |
+| `k8s/` | Deployment + service manifests and AKS helper script. |
+| `scripts/api_test_suite.py` | End-to-end verification suite. |
 
 ## License
 
-This project is licensed under the MIT License - see the LICENSE file for details.
+MIT – see `LICENSE`.

@@ -3,57 +3,688 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>URL Shortener</title>
+  <title>myURL Shortener</title>
   <style>
-    body { font-family: Arial, sans-serif; margin: 2rem; color: #1f2933; }
-    h1 { margin-bottom: 0.5rem; }
-    form { display: flex; flex-direction: column; max-width: 420px; gap: 0.75rem; }
-    input[type="url"] { padding: 0.75rem; font-size: 1rem; border: 1px solid #cbd5e0; border-radius: 6px; }
-    button { padding: 0.75rem; font-size: 1rem; border: none; border-radius: 6px; background: #2563eb; color: white; cursor: pointer; }
-    button:disabled { opacity: 0.6; cursor: not-allowed; }
-    .result { margin-top: 1rem; font-size: 1rem; }
-    .error { color: #c53030; }
+    :root {
+      color-scheme: light dark;
+      --primary: #4f46e5;
+      --primary-dark: #4338ca;
+      --bg: #0f172a;
+      --surface: #111c33;
+      --panel: #ffffff;
+      --text: #0f172a;
+      --muted: #6b7280;
+      --border: #e2e8f0;
+      --error: #dc2626;
+      --success: #16a34a;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+    }
+    .app-shell {
+      display: flex;
+      min-height: 100vh;
+    }
+    .sidebar {
+      width: 260px;
+      background: var(--surface);
+      color: #e2e8f0;
+      display: flex;
+      flex-direction: column;
+      padding: 1.5rem;
+      gap: 1.5rem;
+    }
+    .brand {
+      font-weight: 700;
+      font-size: 1.25rem;
+    }
+    .brand small {
+      font-weight: 400;
+      color: #94a3b8;
+      display: block;
+      margin-top: 0.25rem;
+      letter-spacing: 0.05em;
+    }
+    .nav {
+      display: flex;
+      flex-direction: column;
+      gap: 0.25rem;
+    }
+    .nav-item {
+      border: none;
+      background: transparent;
+      color: #cbd5f5;
+      text-align: left;
+      padding: 0.75rem 0.9rem;
+      border-radius: 10px;
+      font-size: 0.95rem;
+      cursor: pointer;
+      transition: background 0.2s ease;
+    }
+    .nav-item.active {
+      background: rgba(255, 255, 255, 0.12);
+      color: #fff;
+    }
+    .nav-item.disabled {
+      opacity: 0.4;
+      cursor: not-allowed;
+    }
+    .sidebar-footer {
+      margin-top: auto;
+      font-size: 0.85rem;
+      color: #94a3b8;
+    }
+    .workspace {
+      flex: 1;
+      background: #f7f8fb;
+      padding: 2rem;
+      display: flex;
+      flex-direction: column;
+      gap: 1.5rem;
+    }
+    .topbar {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .eyebrow {
+      font-size: 0.85rem;
+      text-transform: uppercase;
+      letter-spacing: 0.12em;
+      color: var(--muted);
+      margin: 0 0 0.35rem;
+    }
+    h1 {
+      margin: 0;
+      font-size: 1.75rem;
+      color: #0f172a;
+    }
+    .ghost {
+      border: 1px solid rgba(79, 70, 229, 0.4);
+      background: transparent;
+      color: var(--primary);
+      padding: 0.45rem 0.9rem;
+      border-radius: 8px;
+      cursor: pointer;
+    }
+    .ghost.hidden { display: none; }
+    .view {
+      display: none;
+      flex-direction: column;
+      gap: 1.5rem;
+    }
+    .view.active { display: flex; }
+    #view-auth {
+      align-items: center;
+    }
+    #view-auth .panel {
+      width: min(520px, 100%);
+    }
+    .panel {
+      background: var(--panel);
+      border-radius: 16px;
+      padding: 1.5rem;
+      box-shadow: 0 12px 35px rgba(15, 23, 42, 0.08);
+      border: 1px solid var(--border);
+    }
+    .panel header {
+      font-weight: 600;
+      margin-bottom: 0.75rem;
+    }
+    form {
+      display: flex;
+      flex-direction: column;
+      gap: 0.85rem;
+    }
+    input, button, textarea {
+      font: inherit;
+    }
+    input {
+      padding: 0.75rem 0.85rem;
+      border-radius: 10px;
+      border: 1px solid var(--border);
+      background: #fff;
+      color: var(--text);
+    }
+    input::placeholder {
+      color: var(--muted);
+      opacity: 0.8;
+    }
+    button.primary {
+      background: var(--primary);
+      color: #fff;
+      border: none;
+      border-radius: 10px;
+      padding: 0.75rem 1rem;
+      font-weight: 600;
+      cursor: pointer;
+      box-shadow: 0 10px 25px rgba(79, 70, 229, 0.25);
+    }
+    button.secondary {
+      background: transparent;
+      color: var(--primary);
+      border: 1px solid rgba(79, 70, 229, 0.4);
+      border-radius: 10px;
+      padding: 0.75rem 1rem;
+      cursor: pointer;
+    }
+    button:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+    .card-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+      gap: 1.25rem;
+    }
+    .status {
+      font-size: 0.9rem;
+      color: var(--muted);
+      min-height: 1.2rem;
+    }
+    .status.error { color: var(--error); }
+    .status.success { color: var(--success); }
+    .auth-toggle {
+      text-align: center;
+      color: var(--muted);
+      margin: 0.5rem 0 0;
+      font-size: 0.95rem;
+    }
+    .auth-toggle button {
+      background: none;
+      border: none;
+      color: var(--primary);
+      font-weight: 600;
+      cursor: pointer;
+      padding: 0;
+      text-decoration: underline;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 1rem;
+    }
+    th, td {
+      border-bottom: 1px solid var(--border);
+      padding: 0.6rem 0.35rem;
+      text-align: left;
+      font-size: 0.95rem;
+    }
+    tbody tr:hover { background: rgba(79, 70, 229, 0.06); }
+    code.token {
+      display: block;
+      background: #0f172a;
+      color: #e0e7ff;
+      padding: 0.85rem;
+      border-radius: 12px;
+      word-break: break-word;
+      font-size: 0.9rem;
+    }
+    .hidden { display: none !important; }
+    @media (max-width: 900px) {
+      .app-shell { flex-direction: column; }
+      .sidebar { width: 100%; flex-direction: row; flex-wrap: wrap; }
+      .nav { flex-direction: row; flex-wrap: wrap; }
+      .workspace { padding: 1.25rem; }
+    }
   </style>
 </head>
 <body>
-  <h1>URL Shortener</h1>
-  <p>Paste any URL below and get a shortened link instantly.</p>
-  <form id="shorten-form">
-    <input type="url" id="long-url" placeholder="https://example.com" required />
-    <button type="submit" id="submit-btn">Shorten</button>
-  </form>
-  <div id="status" class="result"></div>
-  <script>
-    const form = document.getElementById('shorten-form');
-    const longUrlInput = document.getElementById('long-url');
-    const statusEl = document.getElementById('status');
-    const submitBtn = document.getElementById('submit-btn');
+  <div class="app-shell">
+    <aside class="sidebar">
+      <div class="brand">
+        myURL
+        <small>Shortener Console</small>
+      </div>
+      <nav class="nav">
+        <button class="nav-item active" data-view="auth">Sign in</button>
+        <button class="nav-item" data-view="shorten" data-protected="true">Shorten URLs</button>
+        <button class="nav-item" data-view="links" data-protected="true">My Links</button>
+        <button class="nav-item" data-view="account" data-protected="true">Account</button>
+      </nav>
+      <div class="sidebar-footer">
+        <strong id="sidebar-status">Guest mode</strong>
+        <p>Authenticate to unlock project tools.</p>
+      </div>
+    </aside>
 
-    form.addEventListener('submit', async (e) => {
-      e.preventDefault();
-      statusEl.textContent = '';
-      submitBtn.disabled = true;
-      try {
-        const response = await fetch('/api/v1/shorten', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ url: longUrlInput.value })
-        });
-        if (!response.ok) {
-          const err = await response.json().catch(() => ({ error: 'Unexpected error' }));
-          throw new Error(err.error || 'Failed to shorten URL');
+    <main class="workspace">
+      <header class="topbar">
+        <div>
+          <p class="eyebrow" id="view-subtitle">Getting started</p>
+          <h1 id="view-title">Welcome</h1>
+        </div>
+        <button class="ghost hidden" id="logout-top">Log out</button>
+      </header>
+
+      <section id="view-auth" class="view active">
+        <article class="panel" id="login-panel">
+          <header>Sign in</header>
+          <form id="login-form">
+            <input id="login-email" type="email" placeholder="Email" required />
+            <input id="login-password" type="password" placeholder="Password" required />
+            <button type="submit" class="primary">Sign in</button>
+            <div class="status" id="login-status"></div>
+          </form>
+        </article>
+        <article class="panel hidden" id="register-panel">
+          <header>Create an account</header>
+          <form id="register-form">
+            <input id="reg-name" placeholder="Full name" minlength="2" required />
+            <input id="reg-email" type="email" placeholder="Email" required />
+            <input id="reg-password" type="password" placeholder="Password (min 8 chars)" minlength="8" required />
+            <button type="submit" class="primary">Create account</button>
+            <div class="status" id="register-status"></div>
+          </form>
+        </article>
+        <p class="auth-toggle" id="auth-toggle-login">
+          New user? <span aria-hidden="true">:</span>
+          <button type="button" id="show-register">Register here</button>
+        </p>
+        <p class="auth-toggle hidden" id="auth-toggle-register">
+          Already have an account? <span aria-hidden="true">:</span>
+          <button type="button" id="show-login">Sign in</button>
+        </p>
+      </section>
+
+      <section id="view-shorten" class="view">
+        <article class="panel">
+          <header>Generate short links</header>
+          <p style="color: var(--muted); margin-top:0;">Authenticated users can convert long URLs into branded redirects and optionally set TTLs.</p>
+          <form id="shorten-form">
+            <input type="url" id="long-url" placeholder="https://contoso.com/blog/article" required />
+            <div style="display:flex; gap:0.75rem; flex-wrap:wrap;">
+              <input type="number" id="ttl" min="0" placeholder="TTL seconds (optional)" style="flex:1 1 160px;" />
+              <button type="submit" class="primary" id="shorten-btn">Shorten link</button>
+            </div>
+            <div class="status" id="shorten-status"></div>
+          </form>
+          <div id="latest-link" class="panel" style="margin-top:1rem; background:#f8fafc; border-style:dashed;" hidden>
+            <header>Latest short URL</header>
+            <a id="latest-url" target="_blank" rel="noopener"></a>
+          </div>
+        </article>
+      </section>
+
+      <section id="view-links" class="view">
+        <article class="panel">
+          <header>Your URLs</header>
+          <div style="display:flex; justify-content:space-between; align-items:center; gap:1rem;">
+            <p style="margin:0; color:var(--muted);">Monitor recently created links and expiry windows.</p>
+            <button class="secondary" id="refresh-btn">Refresh</button>
+          </div>
+          <table>
+            <thead>
+              <tr><th>Code</th><th>Destination</th><th>Created</th><th>Expires</th></tr>
+            </thead>
+            <tbody id="links-body">
+              <tr><td colspan="4" style="text-align:center; color: var(--muted);">Login to see your URLs</td></tr>
+            </tbody>
+          </table>
+        </article>
+      </section>
+
+      <section id="view-account" class="view">
+        <div class="card-grid">
+          <article class="panel">
+            <header>Profile</header>
+            <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap:1rem;">
+              <div>
+                <p class="eyebrow" style="margin-bottom:0.2rem;">Name</p>
+                <strong id="account-name">—</strong>
+              </div>
+              <div>
+                <p class="eyebrow" style="margin-bottom:0.2rem;">Email</p>
+                <strong id="account-email">—</strong>
+              </div>
+              <div>
+                <p class="eyebrow" style="margin-bottom:0.2rem;">User ID</p>
+                <strong id="account-id">—</strong>
+              </div>
+            </div>
+          </article>
+          <article class="panel">
+            <header>API Token</header>
+            <code class="token" id="account-token">Sign in to view token</code>
+            <div style="display:flex; gap:0.75rem; flex-wrap:wrap; margin-top:0.75rem;">
+              <button class="secondary" id="copy-token">Copy token</button>
+              <button class="secondary" id="logout-btn">Sign out</button>
+            </div>
+            <div class="status" id="account-status"></div>
+          </article>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <script>
+    const registerForm = document.getElementById('register-form');
+    const loginForm = document.getElementById('login-form');
+    const shortenForm = document.getElementById('shorten-form');
+    const registerStatus = document.getElementById('register-status');
+    const loginStatus = document.getElementById('login-status');
+    const shortenStatus = document.getElementById('shorten-status');
+    const latestLink = document.getElementById('latest-link');
+    const latestUrl = document.getElementById('latest-url');
+    const linksBody = document.getElementById('links-body');
+    const refreshBtn = document.getElementById('refresh-btn');
+    const navButtons = Array.from(document.querySelectorAll('.nav-item'));
+    const views = Array.from(document.querySelectorAll('.view'));
+    const viewTitle = document.getElementById('view-title');
+    const viewSubtitle = document.getElementById('view-subtitle');
+    const sidebarStatus = document.getElementById('sidebar-status');
+    const logoutBtn = document.getElementById('logout-btn');
+    const logoutTop = document.getElementById('logout-top');
+    const accountName = document.getElementById('account-name');
+    const accountEmail = document.getElementById('account-email');
+    const accountId = document.getElementById('account-id');
+    const accountToken = document.getElementById('account-token');
+    const accountStatus = document.getElementById('account-status');
+    const loginPanel = document.getElementById('login-panel');
+    const registerPanel = document.getElementById('register-panel');
+    const authToggleLogin = document.getElementById('auth-toggle-login');
+    const authToggleRegister = document.getElementById('auth-toggle-register');
+    const showRegisterBtn = document.getElementById('show-register');
+    const showLoginBtn = document.getElementById('show-login');
+
+    const lsTokenKey = 'urlshort_token';
+    const lsProfileKey = 'urlshort_profile';
+    const viewMeta = {
+      auth: { title: 'Sign in', subtitle: 'Authenticate to unlock project tools.' },
+      shorten: { title: 'Shorten URLs', subtitle: 'Authenticated workspace' },
+      links: { title: 'Your links', subtitle: 'Analytics-ready list of active codes' },
+      account: { title: 'Account settings', subtitle: 'Manage access tokens and profile' }
+    };
+
+    const client = {
+      token: localStorage.getItem(lsTokenKey) || '',
+      profile: (() => {
+        try {
+          return JSON.parse(localStorage.getItem(lsProfileKey) || 'null');
+        } catch (_) {
+          return null;
         }
-        const data = await response.json();
-        const safeUrl = data.short;
-        statusEl.className = 'result';
-        statusEl.innerHTML = `Short URL: <a href="${safeUrl}" target="_blank" rel="noopener">${safeUrl}</a>`;
+      })(),
+      async request(path, options = {}) {
+        const headers = options.headers ? { ...options.headers } : {};
+        headers['Content-Type'] = 'application/json';
+        if (this.token) {
+          headers['Authorization'] = `Bearer ${this.token}`;
+        }
+        const res = await fetch(path, { ...options, headers });
+        const text = await res.text();
+        let data;
+        try { data = text ? JSON.parse(text) : {}; } catch { data = { error: text || 'Invalid JSON' }; }
+        if (!res.ok) {
+          const message = data && data.error ? data.error : 'Request failed';
+          throw new Error(message);
+        }
+        return data;
+      }
+    };
+
+    function setStatus(el, message = '', type = '') {
+      if (!el) return;
+      el.textContent = message;
+      el.className = `status ${type}`.trim();
+    }
+
+    function switchAuthMode(mode = 'login') {
+      const loginActive = mode !== 'register';
+      loginPanel.classList.toggle('hidden', !loginActive);
+      registerPanel.classList.toggle('hidden', loginActive);
+      authToggleLogin.classList.toggle('hidden', !loginActive);
+      authToggleRegister.classList.toggle('hidden', loginActive);
+      if (loginActive) {
+        setStatus(registerStatus);
+      } else {
+        setStatus(loginStatus);
+      }
+    }
+
+    function requireValue(value, message) {
+      if (!value || !value.trim()) {
+        throw new Error(message);
+      }
+      return value.trim();
+    }
+
+    function requirePassword(value) {
+      const pw = requireValue(value, 'Password required');
+      if (pw.length < 8) {
+        throw new Error('Password must be at least 8 characters');
+      }
+      return pw;
+    }
+
+    function parseUrl(value) {
+      try {
+        return new URL(requireValue(value, 'URL required'));
+      } catch (_) {
+        throw new Error('Enter a valid URL (https://...)');
+      }
+    }
+
+    function persistSession() {
+      if (client.token) {
+        localStorage.setItem(lsTokenKey, client.token);
+      } else {
+        localStorage.removeItem(lsTokenKey);
+      }
+      if (client.profile) {
+        localStorage.setItem(lsProfileKey, JSON.stringify(client.profile));
+      } else {
+        localStorage.removeItem(lsProfileKey);
+      }
+    }
+
+    function updateAccountPane() {
+      accountName.textContent = client.profile?.name || '—';
+      accountEmail.textContent = client.profile?.email || '—';
+      accountId.textContent = client.profile?.id ?? '—';
+      accountToken.textContent = client.token ? client.token : 'Sign in to view token';
+    }
+
+    function updateSessionUI() {
+      persistSession();
+      updateAccountPane();
+      if (client.token) {
+        sidebarStatus.textContent = client.profile?.name ? `Signed in as ${client.profile.name}` : 'Authenticated';
+        logoutTop.classList.remove('hidden');
+      } else {
+        sidebarStatus.textContent = 'Guest mode';
+        logoutTop.classList.add('hidden');
+        linksBody.innerHTML = '<tr><td colspan="4" style="text-align:center; color: var(--muted);">Login to see your URLs</td></tr>';
+      }
+      updateNavProtection();
+    }
+
+    function updateNavProtection() {
+      navButtons.forEach((btn) => {
+        const isProtected = btn.dataset.protected === 'true';
+        if (isProtected && !client.token) {
+          btn.classList.add('disabled');
+        } else {
+          btn.classList.remove('disabled');
+        }
+      });
+    }
+
+    function activateView(name) {
+      const requiresAuth = ['shorten', 'links', 'account'].includes(name);
+      if (requiresAuth && !client.token) {
+        switchAuthMode('login');
+        setStatus(loginStatus, 'Please sign in to access this area.', 'error');
+        navButtons.find((b) => b.dataset.view === 'auth')?.classList.add('active');
+        navButtons.forEach((btn) => btn.classList.toggle('active', btn.dataset.view === 'auth'));
+        views.forEach((view) => view.classList.toggle('active', view.id === 'view-auth'));
+        viewTitle.textContent = viewMeta.auth.title;
+        viewSubtitle.textContent = viewMeta.auth.subtitle;
+        return;
+      }
+      navButtons.forEach((btn) => btn.classList.toggle('active', btn.dataset.view === name));
+      views.forEach((section) => section.classList.toggle('active', section.id === `view-${name}`));
+      viewTitle.textContent = viewMeta[name]?.title || '';
+      viewSubtitle.textContent = viewMeta[name]?.subtitle || '';
+      if (name === 'links') {
+        loadLinks();
+      }
+    }
+
+    navButtons.forEach((btn) => {
+      btn.addEventListener('click', () => {
+        if (btn.classList.contains('disabled')) {
+          setStatus(loginStatus, 'Sign in first to use navigation.', 'error');
+          return;
+        }
+        activateView(btn.dataset.view);
+      });
+    });
+
+    if (showRegisterBtn) {
+      showRegisterBtn.addEventListener('click', () => switchAuthMode('register'));
+    }
+    if (showLoginBtn) {
+      showLoginBtn.addEventListener('click', () => switchAuthMode('login'));
+    }
+
+    async function loadLinks() {
+      if (!client.token) return;
+      try {
+        const data = await client.request('/api/v1/urls');
+        if (!Array.isArray(data) || data.length === 0) {
+          linksBody.innerHTML = '<tr><td colspan="4" style="text-align:center;">No URLs yet</td></tr>';
+          return;
+        }
+        linksBody.innerHTML = data.map((item) => {
+          const created = new Date(item.created_at * 1000).toLocaleString();
+          const expires = item.expires_at ? new Date(item.expires_at * 1000).toLocaleString() : '—';
+          return `<tr><td><a href="${item.short}" target="_blank" rel="noopener">${item.code}</a></td><td>${item.url}</td><td>${created}</td><td>${expires}</td></tr>`;
+        }).join('');
       } catch (err) {
-        statusEl.className = 'result error';
-        statusEl.textContent = err.message;
-      } finally {
-        submitBtn.disabled = false;
+        linksBody.innerHTML = `<tr><td colspan="4" class="status error">${err.message}</td></tr>`;
+      }
+    }
+
+    registerForm.addEventListener('submit', async (event) => {
+      event.preventDefault();
+      setStatus(registerStatus, 'Creating account...');
+      try {
+        const payload = {
+          name: requireValue(document.getElementById('reg-name').value, 'Name required'),
+          email: requireValue(document.getElementById('reg-email').value, 'Email required'),
+          password: requirePassword(document.getElementById('reg-password').value)
+        };
+        const data = await client.request('/api/v1/register', { method: 'POST', body: JSON.stringify(payload) });
+        client.token = data.token;
+        client.profile = { id: data.user_id, name: data.name, email: data.email };
+        setStatus(registerStatus, `Welcome ${client.profile.name}!`, 'success');
+        updateSessionUI();
+        activateView('shorten');
+        loadLinks();
+      } catch (err) {
+        setStatus(registerStatus, err.message, 'error');
       }
     });
+
+    loginForm.addEventListener('submit', async (event) => {
+      event.preventDefault();
+      setStatus(loginStatus, 'Signing in...');
+      try {
+        const payload = {
+          email: requireValue(document.getElementById('login-email').value, 'Email required'),
+          password: requireValue(document.getElementById('login-password').value, 'Password required')
+        };
+        const data = await client.request('/api/v1/login', { method: 'POST', body: JSON.stringify(payload) });
+        client.token = data.token;
+        client.profile = { id: data.user_id, name: data.name, email: data.email };
+        setStatus(loginStatus, 'Authenticated!', 'success');
+        updateSessionUI();
+        activateView('shorten');
+        loadLinks();
+      } catch (err) {
+        setStatus(loginStatus, err.message, 'error');
+      }
+    });
+
+    shortenForm.addEventListener('submit', async (event) => {
+      event.preventDefault();
+      if (!client.token) {
+        setStatus(shortenStatus, 'Please sign in first.', 'error');
+        activateView('auth');
+        return;
+      }
+      setStatus(shortenStatus, 'Shortening...');
+      const ttl = document.getElementById('ttl').value;
+      try {
+        const longUrl = parseUrl(document.getElementById('long-url').value).toString();
+        const payload = { url: longUrl };
+        if (ttl) {
+          const ttlNum = Number(ttl);
+          if (Number.isNaN(ttlNum) || ttlNum < 0) {
+            throw new Error('TTL must be zero or a positive number');
+          }
+          payload.ttl = ttlNum;
+        }
+        const data = await client.request('/api/v1/shorten', { method: 'POST', body: JSON.stringify(payload) });
+        setStatus(shortenStatus, 'Short link created!', 'success');
+        latestLink.hidden = false;
+        latestUrl.href = data.short;
+        latestUrl.textContent = data.short;
+        loadLinks();
+      } catch (err) {
+        setStatus(shortenStatus, err.message, 'error');
+      }
+    });
+
+    document.getElementById('copy-token').addEventListener('click', async () => {
+      if (!client.token) {
+        setStatus(accountStatus, 'Token unavailable until you sign in.', 'error');
+        return;
+      }
+      try {
+        await navigator.clipboard.writeText(client.token);
+        setStatus(accountStatus, 'Token copied.', 'success');
+        setTimeout(() => setStatus(accountStatus, ''), 2500);
+      } catch (err) {
+        setStatus(accountStatus, 'Unable to copy token.', 'error');
+      }
+    });
+
+    function logout() {
+      client.token = '';
+      client.profile = null;
+      latestLink.hidden = true;
+      setStatus(loginStatus, 'Logged out');
+      setStatus(accountStatus, 'Signed out');
+      updateSessionUI();
+      activateView('auth');
+      switchAuthMode('login');
+    }
+
+    logoutBtn.addEventListener('click', logout);
+    logoutTop.addEventListener('click', logout);
+
+    refreshBtn.addEventListener('click', () => {
+      if (!client.token) {
+        setStatus(loginStatus, 'Login first', 'error');
+        return;
+      }
+      loadLinks();
+    });
+
+    updateSessionUI();
+    activateView('auth');
+    switchAuthMode('login');
+    if (client.token) {
+      activateView('shorten');
+      loadLinks();
+    }
   </script>
 </body>
 </html>

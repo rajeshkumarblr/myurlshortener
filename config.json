@@ -4,8 +4,5 @@
     "threads": 0,
     "base_url": "http://urlshortener-demo.westus3.cloudapp.azure.com"
   },
-  "database": {
-    "url": "postgres://pgadmin:UrlShort3n3r!2025@pg-urlshortener-22037.postgres.database.azure.com:5432/urlshortener?sslmode=require"
-  },
   "log": { "level": "TRACE" }
 }

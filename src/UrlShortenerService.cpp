@@ -1,63 +1,22 @@
 #include "UrlShortenerService.h"
 #include "utils.h"
+#include <algorithm>
+#include <chrono>
+#include <cstdlib>
 #include <random>
-#include <memory>
-#include "db.h"
 
 using namespace std;
 using namespace drogon;
-using Clock = chrono::steady_clock;
+using SystemClock = std::chrono::system_clock;
 
-bool UrlRecord::isExpired() const {
-    return expiresAt && Clock::now() > *expiresAt;
-}
-
-UrlShortenerService::UrlShortenerService() {
-    loadConfiguration();
-    try {
-        db::init();
-    } catch (const std::exception& e) {
-        // DB init errors surface on first use; continue startup
-    }
-}
-
-void UrlShortenerService::loadConfiguration() {
-    try {
-        auto& appConfig = drogon::app().getCustomConfig();
-        auto readString = [](const Json::Value& node, const char* field) -> std::string {
-            if (node.isMember(field) && node[field].isString()) {
-                return node[field].asString();
-            }
-            return {};
-        };
-
-        if (auto direct = readString(appConfig, "base_url"); !direct.empty()) {
-            baseUrl = direct;
-        } else if (appConfig.isMember("app") && appConfig["app"].isObject()) {
-            if (auto nested = readString(appConfig["app"], "base_url"); !nested.empty()) {
-                baseUrl = nested;
-            }
-        }
-
-        std::string dbUrl;
-        if (auto directDb = readString(appConfig, "database_url"); !directDb.empty()) {
-            dbUrl = directDb;
-        } else if (appConfig.isMember("database") && appConfig["database"].isObject()) {
-            if (auto nestedDb = readString(appConfig["database"], "url"); !nestedDb.empty()) {
-                dbUrl = nestedDb;
-            }
-        } else if (appConfig.isMember("app") && appConfig["app"].isObject()) {
-            if (auto nestedDb = readString(appConfig["app"], "database_url"); !nestedDb.empty()) {
-                dbUrl = nestedDb;
-            }
-        }
-
-        if (!dbUrl.empty()) {
-            db::set_connection_uri(dbUrl);
-        }
-    } catch (const exception& e) {
-        // If config loading fails, use fallback in getBaseUrl()
-        baseUrl = "";
+UrlShortenerService::UrlShortenerService(std::shared_ptr<DataStore> dataStore,
+                                         std::shared_ptr<AuthService> authService,
+                                         std::string baseUrl)
+    : dataStore_(std::move(dataStore)),
+      authService_(std::move(authService)),
+      baseUrl_(std::move(baseUrl)) {
+    if (!dataStore_ || !authService_) {
+        throw std::runtime_error("Service dependencies missing");
     }
 }
 
@@ -82,8 +41,8 @@ string UrlShortenerService::generateShortCode() const {
 }
 
 string UrlShortenerService::getBaseUrl() const {
-    if (!baseUrl.empty()) {
-        return baseUrl;
+    if (!baseUrl_.empty()) {
+        return baseUrl_;
     }
     
     // Fallback to environment variable or default
@@ -97,14 +56,9 @@ string UrlShortenerService::getBaseUrl() const {
     return "http://localhost:" + port;
 }
 
-size_t UrlShortenerService::getShardIndex(const string& key) const {
-    // Simple hash-based sharding
-    return hash<string>{}(key) % NUM_SHARDS;
-}
-
 void UrlShortenerService::handleHealth(const HttpRequestPtr& req, 
                                       function<void(const HttpResponsePtr&)>&& callback) const {
-    bool db_ok = db::ping();
+    bool db_ok = dataStore_->ping();
     auto resp = HttpResponse::newHttpResponse();
     resp->setContentTypeCode(CT_TEXT_PLAIN);
     if (db_ok) {
@@ -133,28 +87,34 @@ void UrlShortenerService::handleShorten(const HttpRequestPtr& req,
         return;
     }
     
-    // Parse TTL if provided
+    auto user = authService_->authenticate(req);
+    if (!user) {
+        callback(createErrorResponse("authentication required", k401Unauthorized));
+        return;
+    }
+
     int ttlSeconds = 0;
     if (body->isMember("ttl") && (*body)["ttl"].isInt()) {
         ttlSeconds = (*body)["ttl"].asInt();
     }
-    
-    // Generate unique code with DB-backed collision retry
+
+    std::optional<DataStore::TimePoint> expiresAt;
+    if (ttlSeconds > 0) {
+        expiresAt = SystemClock::now() + std::chrono::seconds(ttlSeconds);
+    }
+
     string code;
-    auto expiresAt = ttlSeconds > 0 ? optional{chrono::time_point<chrono::system_clock>(chrono::system_clock::now() + chrono::seconds(ttlSeconds))} : nullopt;
-    
-    // Generate code and use shard-specific mutex
     for (int attempt = 0; attempt < 5; ++attempt) {
         code = generateShortCode();
         try {
-            if (db::insert_mapping(code, url, expiresAt)) {
-                break; // success
+            if (dataStore_->insertMapping(code, url, expiresAt, user->id)) {
+                break;
             }
         } catch (const std::exception& e) {
             callback(createErrorResponse(string("db error: ") + e.what(), k500InternalServerError));
             return;
         }
-        
+
         if (attempt == 4) {
             callback(createErrorResponse("collision", k500InternalServerError));
             return;
@@ -172,43 +132,78 @@ void UrlShortenerService::handleShorten(const HttpRequestPtr& req,
 void UrlShortenerService::handleInfo(const HttpRequestPtr& req, 
                                     function<void(const HttpResponsePtr&)>&& callback, 
                                     const string& code) const {
-    string url;
-    bool ttl_active = false;
     try {
-        if (!db::get_info(code, url, ttl_active)) {
+        auto info = dataStore_->getUrlInfo(code);
+        if (!info) {
             callback(createErrorResponse("not found", k404NotFound));
             return;
         }
+        Json::Value response;
+        response["code"] = code;
+        response["url"] = info->url;
+        response["ttl_active"] = info->ttlActive;
+        callback(createJsonResponse(response));
     } catch (const std::exception& e) {
         callback(createErrorResponse(string("db error: ") + e.what(), k500InternalServerError));
-        callback(createErrorResponse("not found", k404NotFound));
         return;
     }
-    
-    Json::Value response;
-    response["code"] = code;
-    response["url"] = url;
-    response["ttl_active"] = ttl_active;
-    
-    callback(createJsonResponse(response));
 }
 
 void UrlShortenerService::handleResolve(const HttpRequestPtr& req, 
                                        function<void(const HttpResponsePtr&)>&& callback, 
                                        const string& code) const {
-    std::string url;
     try {
-        if (!db::get_mapping(code, url)) {
+        auto url = dataStore_->resolveUrl(code);
+        if (!url) {
             auto resp = HttpResponse::newHttpResponse();
             resp->setStatusCode(k404NotFound);
             callback(resp);
             return;
         }
+        callback(HttpResponse::newRedirectionResponse(*url));
     } catch (const std::exception& e) {
         auto resp = HttpResponse::newHttpResponse();
         resp->setStatusCode(k500InternalServerError);
         callback(resp);
         return;
     }
-    callback(HttpResponse::newRedirectionResponse(url));
+}
+
+void UrlShortenerService::handleListUserUrls(
+    const HttpRequestPtr& req,
+    function<void(const HttpResponsePtr&)>&& callback) const {
+    auto user = authService_->authenticate(req);
+    if (!user) {
+        callback(createErrorResponse("authentication required", k401Unauthorized));
+        return;
+    }
+    size_t limit = 50;
+    auto limitParam = req->getParameter("limit");
+    if (!limitParam.empty()) {
+        try {
+            limit = std::clamp(static_cast<size_t>(std::stoul(limitParam)), size_t{1}, size_t{200});
+        } catch (...) {
+            callback(createErrorResponse("invalid limit value"));
+            return;
+        }
+    }
+
+    try {
+        auto rows = dataStore_->listUrlsForUser(user->id, limit);
+        Json::Value json(Json::arrayValue);
+        for (const auto& row : rows) {
+            Json::Value item;
+            item["code"] = row.code;
+            item["url"] = row.url;
+            item["short"] = getBaseUrl() + "/" + row.code;
+            item["created_at"] = static_cast<Json::Int64>(std::chrono::duration_cast<std::chrono::seconds>(row.createdAt.time_since_epoch()).count());
+            if (row.expiresAt) {
+                item["expires_at"] = static_cast<Json::Int64>(std::chrono::duration_cast<std::chrono::seconds>(row.expiresAt->time_since_epoch()).count());
+            }
+            json.append(item);
+        }
+        callback(createJsonResponse(json));
+    } catch (const std::exception& e) {
+        callback(createErrorResponse(string("db error: ") + e.what(), k500InternalServerError));
+    }
 }

@@ -5,13 +5,16 @@ set(CMAKE_CXX_STANDARD 20)
 # Generate compile commands for VS Code IntelliSense
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
-find_package(Drogon CONFIG REQUIRED) # install Drogon first (see below)
-find_package(PostgreSQL REQUIRED)
+find_package(Drogon CONFIG REQUIRED)
+find_package(OpenSSL REQUIRED)
 
 add_executable(url_shortener 
     src/main.cpp
     src/UrlShortenerService.cpp
     src/utils.cpp
-    src/db.cpp
+    src/controllers/AuthController.cpp
+    src/security/PasswordHasher.cpp
+    src/services/AuthService.cpp
+    src/services/DataStore.cpp
 )
-target_link_libraries(url_shortener PRIVATE Drogon::Drogon PostgreSQL::PostgreSQL)
+target_link_libraries(url_shortener PRIVATE Drogon::Drogon OpenSSL::Crypto)
