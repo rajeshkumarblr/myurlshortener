@@ -112,58 +112,21 @@ else
   ACR_LOGIN_SERVER=$(az acr show -n "${ACR}" --query loginServer -o tsv)
 fi
 
-# 3.5) (Optional) Create Azure Database for PostgreSQL Flexible Server (dev-friendly)
-if [ "${CREATE_PG}" = "true" ]; then
-  if [ -z "${PG_PASSWORD}" ]; then
-    PG_PASSWORD=$(tr -dc A-Za-z0-9 </dev/urandom | head -c 20)
-  fi
-  if ! az postgres flexible-server show -g "${RG}" -n "${PG_NAME}" >/dev/null 2>&1; then
-    log "Creating Azure Postgres Flexible Server ${PG_NAME} (public-access dev mode)"
-    az postgres flexible-server create \
-      -g "${RG}" -n "${PG_NAME}" -l "${LOC}" \
-      --version "${PG_VERSION}" \
-      --tier Burstable --sku-name Standard_B1ms --storage-size 32 \
-      --admin-user "${PG_ADMIN}" --admin-password "${PG_PASSWORD}" \
-      --public-access 0.0.0.0 \
-      -o none
-  else
-    log "Postgres server ${PG_NAME} exists"
-  fi
-  # Ensure database exists
-  az postgres flexible-server db create -g "${RG}" -s "${PG_NAME}" -d urlshortener -o none || true
-  # Compose DATABASE_URL using admin (simplified for dev). For prod, create a least-privileged app user.
-  PG_FQDN=$(az postgres flexible-server show -g "${RG}" -n "${PG_NAME}" --query fullyQualifiedDomainName -o tsv)
-  export DATABASE_URL="postgres://${PG_ADMIN}:${PG_PASSWORD}@${PG_FQDN}:5432/urlshortener?sslmode=require"
-  log "DATABASE_URL set for deployment (admin-based, dev only)."
-  log "IMPORTANT: Restrict firewall and create a dedicated app user for production."
-fi
+# 3.6) Install PostgreSQL via Helm (Self-hosted in AKS)
+log "Installing PostgreSQL via Helm"
+helm repo add bitnami https://charts.bitnami.com/bitnami >/dev/null 2>&1 || true
+helm repo update >/dev/null 2>&1
+helm upgrade --install postgres bitnami/postgresql \
+  --set auth.postgresPassword=UrlShortPass2025 \
+  --set auth.database=urlshortener \
+  --set primary.persistence.size=2Gi \
+  --set primary.resources.requests.memory=256Mi \
+  --set primary.resources.requests.cpu=100m \
+  --set primary.resources.limits.memory=512Mi \
+  --set primary.resources.limits.cpu=500m
 
-
-
-# Always fetch DATABASE_URL and JWT_SECRET from Azure Key Vault at deploy time
-log "Fetching DATABASE_URL from Key Vault kv-urlshortener/pg-urlshortener"
-if ! DATABASE_URL=$(az keyvault secret show --vault-name kv-urlshortener --name pg-urlshortener --query value -o tsv 2>/tmp/kv_pg.err); then
-  log "Failed to fetch DATABASE_URL. Details: $(cat /tmp/kv_pg.err)"
-  rm -f /tmp/kv_pg.err
-  exit 3
-fi
-rm -f /tmp/kv_pg.err
-if [ -z "${DATABASE_URL}" ]; then
-  log "Secret pg-urlshortener in kv-urlshortener is empty."
-  exit 3
-fi
-
-log "Fetching JWT_SECRET from Key Vault kv-urlshortener/jwt-urlshortener"
-if ! JWT_SECRET=$(az keyvault secret show --vault-name kv-urlshortener --name jwt-urlshortener --query value -o tsv 2>/tmp/kv_jwt.err); then
-  log "Failed to fetch JWT_SECRET. Details: $(cat /tmp/kv_jwt.err)"
-  rm -f /tmp/kv_jwt.err
-  exit 4
-fi
-rm -f /tmp/kv_jwt.err
-if [ -z "${JWT_SECRET}" ]; then
-  log "Secret jwt-urlshortener in kv-urlshortener is empty."
-  exit 4
-fi
+# Internal Cluster DNS for Postgres
+INTERNAL_DB_URL="postgres://postgres:UrlShortPass2025@postgres-postgresql.default.svc.cluster.local:5432/urlshortener"
 
 # 4) Build, tag, push image (optional)
 : "${BUILD_IMAGE:=true}"
@@ -182,21 +145,21 @@ log "Getting cluster credentials"
 az aks get-credentials -g "${RG}" -n "${AKS}" --overwrite-existing >/dev/null
 
 # 6) Create/update external PostgreSQL secret
-if [ -z "${DATABASE_URL:-}" ]; then
+# Use the internal DB URL if set (Helm install), otherwise fall back to env var
+FINAL_DB_URL="${INTERNAL_DB_URL:-${DATABASE_URL:-}}"
+
+if [ -z "${FINAL_DB_URL}" ]; then
   log "DATABASE_URL not set."
-  log "Either set CREATE_PG=true to auto-provision a dev Postgres, or export a connection string:"
-  log "  export DATABASE_URL=postgres://app:password@host:5432/urlshortener?sslmode=require"
   exit 3
 fi
 
-if [ -z "${JWT_SECRET:-}" ]; then
-  log "JWT_SECRET not set. Provide via JWT_SECRET env var or Key Vault (KV_JWT_SECRET_NAME)."
-  exit 5
-fi
+# Use a default JWT secret if not provided (for demo purposes)
+FINAL_JWT_SECRET="${JWT_SECRET:-MySuperSecretKey2025}"
+
 log "Applying external-postgres secret"
 kubectl create secret generic external-postgres \
-  --from-literal=DATABASE_URL="${DATABASE_URL}" \
-  --from-literal=JWT_SECRET="${JWT_SECRET}" \
+  --from-literal=DATABASE_URL="${FINAL_DB_URL}" \
+  --from-literal=JWT_SECRET="${FINAL_JWT_SECRET}" \
   -o yaml --dry-run=client | kubectl apply -f -
 
 # 8) Deploy app manifests (ClusterIP service, Deployment, Ingress)

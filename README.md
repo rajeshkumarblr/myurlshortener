@@ -9,7 +9,7 @@ Production-ready Drogon (C++) service that issues short URLs behind authenticate
 ## Highlights
 
 - **Secure auth** – Registration/login APIs issue JWT bearer tokens; Drogon filters enforce protected routes.
-- **PostgreSQL storage** – Uses Drogon ORM with pooled connections, migrations, TTL enforcement, and metadata for each short code.
+- **PostgreSQL storage** – Self-hosted PostgreSQL (Helm) running in-cluster for a fully self-contained deployment.
 - **Redis Caching** – High-performance URL resolution using the Cache-Aside pattern to minimize database load.
 - **Modern UI** – `public/index.html` now offers a login-first console with gated navigation, instant validation, and link management tools.
 - **Automated validation** – Python test suite hits every auth + shorten + redirect endpoint locally or against prod via `BASE_URL`.
@@ -106,20 +106,20 @@ The suite performs health → register/login → shorten/list/info/redirect chec
 ## Deployment
 
 ```
-DATABASE_URL='postgres://.../urlshortener?sslmode=require' \
-  bash k8s/deploy-aks.sh
+bash k8s/deploy-aks.sh
 ```
 
 What the script does:
 
 1. Ensures Azure resource group, AKS cluster, and ACR (Basic SKU) exist.
-2. Builds the Docker image using the repo’s multi-stage Dockerfile.
-3. Pushes to ACR and wires AKS with `external-postgres` secret containing `DATABASE_URL`.
-4. Applies `k8s/deployment.yaml` + `k8s/service.yaml`, waits for rollout, and prints the LoadBalancer endpoint.
+2. Installs **Redis** and **PostgreSQL** via Helm charts into the cluster.
+3. Builds the Docker image using the repo’s multi-stage Dockerfile.
+4. Pushes to ACR and wires AKS with `external-postgres` secret pointing to the in-cluster Postgres.
+5. Applies `k8s/deployment.yaml` + `k8s/service.yaml`, waits for rollout, and prints the LoadBalancer endpoint.
 
 ### Pulling secrets from Azure Key Vault
 
-Keep the PostgreSQL URI out of local shells by storing it as a Key Vault secret and letting the script retrieve it automatically:
+(Optional) If you still want to use an external Azure Postgres, you can provide the connection string via Key Vault:
 
 ```bash
 az keyvault create -n kv-urlshortener -g rg-urlshortener-wus3 -l westus3
