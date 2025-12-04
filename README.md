@@ -10,43 +10,15 @@ Production-ready Drogon (C++) service that issues short URLs behind authenticate
 
 - **Secure auth** – Registration/login APIs issue JWT bearer tokens; Drogon filters enforce protected routes.
 - **PostgreSQL storage** – Uses Drogon ORM with pooled connections, migrations, TTL enforcement, and metadata for each short code.
+- **Redis Caching** – High-performance URL resolution using the Cache-Aside pattern to minimize database load.
 - **Modern UI** – `public/index.html` now offers a login-first console with gated navigation, instant validation, and link management tools.
 - **Automated validation** – Python test suite hits every auth + shorten + redirect endpoint locally or against prod via `BASE_URL`.
 - **Cloud deployment** – Single command (`k8s/deploy-aks.sh`) builds the container, pushes to Azure Container Registry, and rolls out to AKS with external Postgres wiring.
 
 ## Architecture Overview
 
-```text
-                 ┌─────────────────────────────┐
-                 │  Browser / Static Console   │
-                 │  (public/index.html)        │
-                 └──────────────┬──────────────┘
-                                │ HTTPS
-                                ▼
-                 ┌─────────────────────────────┐
-                 │ Azure Load Balancer (AKS)   │
-                 │ k8s Service: url-shortener  │
-                 └──────────────┬──────────────┘
-                                │ ClusterIP
-                                ▼
-                 ┌─────────────────────────────┐
-                 │ AKS Node (Standard_B2s)     │
-                 │  └─ Pod: Drogon container   │
-                 │        - Controllers        │
-                 │        - Services           │
-                 │        - Static assets      │
-                 └──────────────┬──────────────┘
-                                │ libpq over TLS
-                                ▼
-            ┌────────────────────────────────────────┐
-            │ Azure Database for PostgreSQL Flexible │
-            │  - urlshortener schema                 │
-            │  - managed backups + SSL               │
-            └────────────────────────────────────────┘
+![Architecture Overview](docs/architecture.png)
 
-ACR (Azure Container Registry) stores the built images that AKS pulls during rollouts,
-and `k8s/deploy-aks.sh` wires the `external-postgres` secret carrying `DATABASE_URL`.
-```
 
 ## Quick Start
 
@@ -57,6 +29,9 @@ cmake --build build -j
 
 # Provide Postgres connection
 export DATABASE_URL='postgres://user:pass@host:5432/urlshortener?sslmode=require'
+
+# Provide Redis connection (optional, defaults to cluster DNS)
+export REDIS_HOST=127.0.0.1
 
 # Run Drogon server
 ./build/url_shortener
@@ -72,6 +47,9 @@ xdg-open http://localhost:9090/
 | Setting | Description |
 | --- | --- |
 | `DATABASE_URL` | Required. Standard Postgres URI (set as env var or `database.url`). |
+| `REDIS_HOST` | Optional. Redis hostname (defaults to `redis-master.cache.svc.cluster.local`). |
+| `REDIS_PORT` | Optional. Redis port (defaults to `6379`). |
+| `REDIS_PASSWORD` | Optional. Redis password. |
 | `app.base_url` | Optional. Overrides host used when echoing `short` links (defaults to detected origin). |
 | `database.pool_size` | Optional connection pool override; defaults to 4. |
 | `security.jwt_secret`, `security.jwt_ttl_seconds` | JWT signing secret + lifetime (env vars `JWT_SECRET`, `JWT_TTL_SECONDS`). |
@@ -94,26 +72,8 @@ Register/login responses include a JWT bearer token; send it via `Authorization:
 
 ### API Sequence Example (register → shorten → redirect)
 
-```text
-User Browser              Drogon API Pod               PostgreSQL
-  |  POST /register        |                              |
-  |----------------------->| create user + hash password |  INSERT INTO users
-  |                        |---------------------------->|  (returns id)
-  |                        |<----------------------------|  OK
-  |<-----------------------| 201 {token}
-  |
-  |  POST /shorten (token) |                              |
-  |----------------------->| validate + create code       |
-  |                        |---------------------------->| INSERT INTO links
-  |                        |<----------------------------| OK
-  |<-----------------------| 201 {code, short URL}
-  |
-  |  GET /{code}           |                              |
-  |----------------------->| lookup code                  |
-  |                        |---------------------------->| SELECT ... WHERE code
-  |                        |<----------------------------| destination URL
-  |<-----------------------| 302 Location: original URL
-```
+![API Sequence Example](docs/sequence.png)
+
 
 ```bash
 TOKEN=$(curl -s -X POST http://localhost:9090/api/v1/register \

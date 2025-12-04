@@ -1,0 +1,60 @@
+flowchart LR
+    subgraph Client [User Space]
+        Browser["Browser / Static Console<br>(public/index.html)"]
+    end
+
+    subgraph Azure ["Azure Cloud (West US 3)"]
+        
+        subgraph AKS ["AKS Cluster"]
+            ALB["Azure Load Balancer"]
+
+            subgraph App ["Drogon Application (C++20)"]
+                direction TB
+                Router["Main / Router"]
+                
+                subgraph Controllers ["Controllers"]
+                    AC["AuthController"]
+                    US["UrlShortenerService"]
+                end
+                
+                subgraph Services ["Services"]
+                    AS["AuthService"]
+                    DS["DataStore (ORM)"]
+                end
+            end
+
+            Redis[("Self-hosted Redis<br>(Helm Chart)")]
+            Postgres[("Azure Database for<br>PostgreSQL Flexible")]
+        end
+    end
+
+    Browser -->|HTTPS| ALB
+    ALB -->|ClusterIP| Router
+    
+    Router --> AC
+    Router --> US
+    
+    AC --> AS
+    US --> AS
+    
+    AS --> DS
+    US --> DS
+    
+    DS -->|libpq over TLS| Postgres
+    US -->|TCP Cache-Aside| Redis
+    Postgres -.->|Cached Data| Redis
+
+    %% Styling
+    style Browser fill:#f9f,stroke:#333,stroke-width:2px
+    style ALB fill:#eee,stroke:#999,stroke-dasharray: 5 5
+    
+    style AKS fill:#e0f7fa,stroke:#006064,stroke-width:2px
+    style App fill:#e3f2fd,stroke:#1565c0,stroke-width:3px
+    style Router fill:#bbdefb,stroke:#1976d2
+    style AC fill:#fff9c4,stroke:#fbc02d
+    style US fill:#fff9c4,stroke:#fbc02d
+    style AS fill:#dcedc8,stroke:#689f38
+    style DS fill:#dcedc8,stroke:#689f38
+
+    style Redis fill:#ffccbc,stroke:#d84315,stroke-width:2px
+    style Postgres fill:#ffccbc,stroke:#d84315,stroke-width:2px

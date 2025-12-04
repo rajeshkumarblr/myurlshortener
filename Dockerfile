@@ -15,9 +15,19 @@ RUN apt-get update && apt-get install -y \
     libssl-dev \
     zlib1g-dev \
     libc-ares-dev \
-  libbrotli-dev \
-  libpq-dev \
-  && rm -rf /var/lib/apt/lists/*
+    libbrotli-dev \
+    libpq-dev \
+    git \
+    cmake \
+    && rm -rf /var/lib/apt/lists/*
+
+  # Build hiredis from source (latest stable)
+  RUN git clone --depth 1 --branch v1.1.0 https://github.com/redis/hiredis.git /tmp/hiredis \
+    && cd /tmp/hiredis \
+    && make -j"$(nproc)" \
+    && make install \
+    && ldconfig \
+    && rm -rf /tmp/hiredis
 
 WORKDIR /src
 
@@ -61,9 +71,20 @@ RUN apt-get update && apt-get install -y \
     zlib1g \
     libc-ares2 \
     libbrotli1 \
-  libpq5 \
+    libpq5 \
+    git \
+    make \
+    gcc \
     curl \
-  && rm -rf /var/lib/apt/lists/*
+    && rm -rf /var/lib/apt/lists/*
+
+  # Build and install hiredis from source (runtime)
+  RUN git clone --depth 1 --branch v1.1.0 https://github.com/redis/hiredis.git /tmp/hiredis \
+    && cd /tmp/hiredis \
+    && make -j"$(nproc)" \
+    && make install \
+    && ldconfig \
+    && rm -rf /tmp/hiredis
 
 WORKDIR /app
 

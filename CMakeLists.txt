@@ -18,4 +18,4 @@ add_executable(url_shortener
     src/services/AuthService.cpp
     src/services/DataStore.cpp
 )
-target_link_libraries(url_shortener PRIVATE Drogon::Drogon OpenSSL::Crypto)
+target_link_libraries(url_shortener PRIVATE Drogon::Drogon OpenSSL::Crypto hiredis)

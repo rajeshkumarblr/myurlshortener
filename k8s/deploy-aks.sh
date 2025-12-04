@@ -1,14 +1,16 @@
+
 #!/usr/bin/env bash
 set -euo pipefail
 
 # Minimal, cost-aware AKS deploy for URL shortener
+
 # Prereqs: az CLI, docker, kubectl logged in (az login)
 
 # Config (override via env or flags)
 : "${RG:=rg-urlshortener-wus3}"
 : "${LOC:=westus3}"
 : "${AKS:=aks-urlshortener}"
-: "${ACR:=acrurlshortener$RANDOM}"   # unique by default
+: "${ACR:=acrurlshortener2261}"   # fixed, use the latest and only ACR
 : "${NODE_SIZE:=Standard_B2s}"      # low-cost VM
 : "${NODE_COUNT:=1}"
 : "${TAG:=v$(date +%Y%m%d%H%M%S)}"
@@ -16,6 +18,9 @@ set -euo pipefail
 : "${KV_SECRET_NAME:=}"
 : "${KV_JWT_SECRET_NAME:=}"
 : "${JWT_SECRET:=}"
+
+# By default, skip infra (resource group, ACR, AKS) setup for faster deploys
+: "${SKIP_INFRA:=true}"
 
 # Optional: create Azure Database for PostgreSQL Flexible Server automatically
 # If CREATE_PG=true, a dev-friendly public-access DB will be created.
@@ -46,32 +51,66 @@ EOF
 
 log() { echo "[deploy-aks] $*"; }
 
-# 0) Resource group
-log "Ensuring resource group ${RG} in ${LOC}"
-az group create -n "${RG}" -l "${LOC}" >/dev/null
-
-# 1) ACR (Basic SKU to limit cost ~ $5/mo)
-if ! az acr show -n "${ACR}" >/dev/null 2>&1; then
-  log "Creating ACR ${ACR} (Basic)"
-  az acr create -g "${RG}" -n "${ACR}" --sku Basic >/dev/null
-else
-  log "ACR ${ACR} exists"
+# 3.7) Ensure Redis is deployed as standalone (NO replicas, minimal resources)
+if helm status redis -n cache >/dev/null 2>&1; then
+  log "Existing Redis Helm release found. Deleting to ensure clean standalone deployment."
+  helm uninstall redis -n cache
+  # Wait for pods to terminate
+  log "Waiting for Redis pods to terminate..."
+  while kubectl get pods -n cache -l app.kubernetes.io/instance=redis 2>/dev/null | grep -q redis; do
+    sleep 3
+    printf "."
+  done
+  echo
 fi
-ACR_LOGIN_SERVER=$(az acr show -n "${ACR}" --query loginServer -o tsv)
+log "Installing Redis (standalone, NO replicas) via Helm"
+helm repo add bitnami https://charts.bitnami.com/bitnami >/dev/null 2>&1 || true
+helm repo update >/dev/null 2>&1
+helm upgrade --install redis bitnami/redis \
+  --namespace cache --create-namespace \
+  --set auth.enabled=true \
+  --set auth.password=UrlShortRedis2025 \
+  --set architecture=standalone \
+  --set replica.replicaCount=0 \
+  --set master.persistence.size=2Gi \
+  --set master.resources.requests.memory=128Mi \
+  --set master.resources.requests.cpu=50m \
+  --set master.resources.limits.memory=256Mi \
+  --set master.resources.limits.cpu=200m
 
-# 2) AKS cluster (control plane free, pay for nodes). Low-cost B2s, 1 node.
-if ! az aks show -g "${RG}" -n "${AKS}" >/dev/null 2>&1; then
-  log "Creating AKS ${AKS} (${NODE_SIZE} x ${NODE_COUNT})"
-  az aks create -g "${RG}" -n "${AKS}" \
-    --node-vm-size "${NODE_SIZE}" --node-count "${NODE_COUNT}" \
-    --enable-managed-identity --generate-ssh-keys >/dev/null
+
+# 0-3) Infra setup (resource group, ACR, AKS, attach ACR) -- skip by default
+if [ "${SKIP_INFRA}" = "false" ]; then
+  log "Ensuring resource group ${RG} in ${LOC}"
+  az group create -n "${RG}" -l "${LOC}" >/dev/null
+
+  # 1) ACR (Basic SKU to limit cost ~ $5/mo)
+  if ! az acr show -n "${ACR}" >/dev/null 2>&1; then
+    log "Creating ACR ${ACR} (Basic)"
+    az acr create -g "${RG}" -n "${ACR}" --sku Basic >/dev/null
+  else
+    log "ACR ${ACR} exists"
+  fi
+  ACR_LOGIN_SERVER=$(az acr show -n "${ACR}" --query loginServer -o tsv)
+
+  # 2) AKS cluster (control plane free, pay for nodes). Low-cost B2s, 1 node.
+  if ! az aks show -g "${RG}" -n "${AKS}" >/dev/null 2>&1; then
+    log "Creating AKS ${AKS} (${NODE_SIZE} x ${NODE_COUNT})"
+    az aks create -g "${RG}" -n "${AKS}" \
+      --node-vm-size "${NODE_SIZE}" --node-count "${NODE_COUNT}" \
+      --enable-managed-identity --generate-ssh-keys >/dev/null
+  else
+    log "AKS ${AKS} exists"
+  fi
+
+  # 3) Attach ACR permissions to AKS (so k8s can pull images)
+  log "Attaching ACR to AKS"
+  az aks update -g "${RG}" -n "${AKS}" --attach-acr "${ACR}" >/dev/null
 else
-  log "AKS ${AKS} exists"
+  log "Skipping infra setup (SKIP_INFRA=true)"
+  # Still need ACR_LOGIN_SERVER for image tag
+  ACR_LOGIN_SERVER=$(az acr show -n "${ACR}" --query loginServer -o tsv)
 fi
-
-# 3) Attach ACR permissions to AKS (so k8s can pull images)
-log "Attaching ACR to AKS"
-az aks update -g "${RG}" -n "${AKS}" --attach-acr "${ACR}" >/dev/null
 
 # 3.5) (Optional) Create Azure Database for PostgreSQL Flexible Server (dev-friendly)
 if [ "${CREATE_PG}" = "true" ]; then
@@ -99,40 +138,44 @@ if [ "${CREATE_PG}" = "true" ]; then
   log "IMPORTANT: Restrict firewall and create a dedicated app user for production."
 fi
 
-if [ -z "${DATABASE_URL:-}" ] && [ -n "${KEYVAULT_NAME}" ] && [ -n "${KV_SECRET_NAME}" ]; then
-  log "Fetching DATABASE_URL from Key Vault ${KEYVAULT_NAME}/${KV_SECRET_NAME}"
-  if ! DATABASE_URL=$(az keyvault secret show --vault-name "${KEYVAULT_NAME}" --name "${KV_SECRET_NAME}" --query value -o tsv 2>/tmp/kv.err); then
-    log "Failed to fetch secret. Details: $(cat /tmp/kv.err)"
-    rm -f /tmp/kv.err
-    exit 4
-  fi
-  rm -f /tmp/kv.err
-  if [ -z "${DATABASE_URL}" ]; then
-    log "Secret ${KV_SECRET_NAME} in ${KEYVAULT_NAME} is empty."
-    exit 4
-  fi
+
+
+# Always fetch DATABASE_URL and JWT_SECRET from Azure Key Vault at deploy time
+log "Fetching DATABASE_URL from Key Vault kv-urlshortener/pg-urlshortener"
+if ! DATABASE_URL=$(az keyvault secret show --vault-name kv-urlshortener --name pg-urlshortener --query value -o tsv 2>/tmp/kv_pg.err); then
+  log "Failed to fetch DATABASE_URL. Details: $(cat /tmp/kv_pg.err)"
+  rm -f /tmp/kv_pg.err
+  exit 3
+fi
+rm -f /tmp/kv_pg.err
+if [ -z "${DATABASE_URL}" ]; then
+  log "Secret pg-urlshortener in kv-urlshortener is empty."
+  exit 3
 fi
 
-if [ -z "${JWT_SECRET:-}" ] && [ -n "${KEYVAULT_NAME}" ] && [ -n "${KV_JWT_SECRET_NAME}" ]; then
-  log "Fetching JWT_SECRET from Key Vault ${KEYVAULT_NAME}/${KV_JWT_SECRET_NAME}"
-  if ! JWT_SECRET=$(az keyvault secret show --vault-name "${KEYVAULT_NAME}" --name "${KV_JWT_SECRET_NAME}" --query value -o tsv 2>/tmp/kv_jwt.err); then
-    log "Failed to fetch JWT secret. Details: $(cat /tmp/kv_jwt.err)"
-    rm -f /tmp/kv_jwt.err
-    exit 4
-  fi
+log "Fetching JWT_SECRET from Key Vault kv-urlshortener/jwt-urlshortener"
+if ! JWT_SECRET=$(az keyvault secret show --vault-name kv-urlshortener --name jwt-urlshortener --query value -o tsv 2>/tmp/kv_jwt.err); then
+  log "Failed to fetch JWT_SECRET. Details: $(cat /tmp/kv_jwt.err)"
   rm -f /tmp/kv_jwt.err
-  if [ -z "${JWT_SECRET}" ]; then
-    log "Secret ${KV_JWT_SECRET_NAME} in ${KEYVAULT_NAME} is empty."
-    exit 4
-  fi
+  exit 4
+fi
+rm -f /tmp/kv_jwt.err
+if [ -z "${JWT_SECRET}" ]; then
+  log "Secret jwt-urlshortener in kv-urlshortener is empty."
+  exit 4
 fi
 
-# 4) Build, tag, push image
-log "Building docker image and pushing to ACR: ${ACR_LOGIN_SERVER}/url-shortener:${TAG}"
-docker build -t url-shortener:aks .
-docker tag url-shortener:aks "${ACR_LOGIN_SERVER}/url-shortener:${TAG}"
-az acr login -n "${ACR}" >/dev/null
-docker push "${ACR_LOGIN_SERVER}/url-shortener:${TAG}"
+# 4) Build, tag, push image (optional)
+: "${BUILD_IMAGE:=true}"
+if [ "${BUILD_IMAGE}" = "true" ]; then
+  log "Building docker image and pushing to ACR: ${ACR_LOGIN_SERVER}/url-shortener:${TAG}"
+  docker build -t url-shortener:aks .
+  docker tag url-shortener:aks "${ACR_LOGIN_SERVER}/url-shortener:${TAG}"
+  az acr login -n "${ACR}" >/dev/null
+  docker push "${ACR_LOGIN_SERVER}/url-shortener:${TAG}"
+else
+  log "Skipping Docker build/push (BUILD_IMAGE=false)"
+fi
 
 # 5) Get kubeconfig
 log "Getting cluster credentials"

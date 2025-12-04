@@ -1,0 +1,25 @@
+sequenceDiagram
+    autonumber
+    participant User as User Browser
+    participant API as Drogon API Pod
+    participant DB as PostgreSQL
+
+    Note over User, API: 1. Registration
+    User->>API: POST /register
+    API->>API: Hash password
+    API->>DB: INSERT INTO users
+    DB-->>API: Returns User ID
+    API-->>User: 201 Created {token}
+
+    Note over User, API: 2. Create Short Link
+    User->>API: POST /shorten (Auth: Bearer token)
+    API->>API: Validate & Generate Code
+    API->>DB: INSERT INTO links
+    DB-->>API: OK
+    API-->>User: 201 Created {code, short_url}
+
+    Note over User, API: 3. Redirect
+    User->>API: GET /{code}
+    API->>DB: SELECT url FROM links WHERE code...
+    DB-->>API: Return Destination URL
+    API-->>User: 302 Found (Location: destination)

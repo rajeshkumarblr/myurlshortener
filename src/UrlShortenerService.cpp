@@ -10,14 +10,16 @@ using namespace drogon;
 using SystemClock = std::chrono::system_clock;
 
 UrlShortenerService::UrlShortenerService(std::shared_ptr<DataStore> dataStore,
-                                         std::shared_ptr<AuthService> authService,
-                                         std::string baseUrl)
-    : dataStore_(std::move(dataStore)),
-      authService_(std::move(authService)),
-      baseUrl_(std::move(baseUrl)) {
-    if (!dataStore_ || !authService_) {
-        throw std::runtime_error("Service dependencies missing");
-    }
+                                                                                 std::shared_ptr<AuthService> authService,
+                                                                                 std::string baseUrl,
+                                                                                 drogon::nosql::RedisClientPtr redisClient)
+        : dataStore_(std::move(dataStore)),
+            authService_(std::move(authService)),
+            baseUrl_(std::move(baseUrl)),
+            redisClient_(std::move(redisClient)) {
+        if (!dataStore_ || !authService_ || !redisClient_) {
+                throw std::runtime_error("Service dependencies missing");
+        }
 }
 
 HttpResponsePtr UrlShortenerService::createJsonResponse(const Json::Value& data, HttpStatusCode status) const {
@@ -108,6 +110,12 @@ void UrlShortenerService::handleShorten(const HttpRequestPtr& req,
         code = generateShortCode();
         try {
             if (dataStore_->insertMapping(code, url, expiresAt, user->id)) {
+                // Write-through: cache in Redis (short TTL if set, else default 1 day)
+                int cacheTtl = ttlSeconds > 0 ? ttlSeconds : 86400;
+                redisClient_->execCommandAsync(
+                    [](const drogon::nosql::RedisResult&) {},
+                    [](const drogon::nosql::RedisException&) {},
+                    "setex %s %d %s", code.c_str(), cacheTtl, url.c_str());
                 break;
             }
         } catch (const std::exception& e) {
@@ -120,12 +128,12 @@ void UrlShortenerService::handleShorten(const HttpRequestPtr& req,
             return;
         }
     }
-    
+
     // Build response
     Json::Value response;
     response["code"] = code;
     response["short"] = getBaseUrl() + "/" + code;
-    
+
     callback(createJsonResponse(response));
 }
 
@@ -152,21 +160,42 @@ void UrlShortenerService::handleInfo(const HttpRequestPtr& req,
 void UrlShortenerService::handleResolve(const HttpRequestPtr& req, 
                                        function<void(const HttpResponsePtr&)>&& callback, 
                                        const string& code) const {
-    try {
-        auto url = dataStore_->resolveUrl(code);
-        if (!url) {
-            auto resp = HttpResponse::newHttpResponse();
-            resp->setStatusCode(k404NotFound);
-            callback(resp);
-            return;
-        }
-        callback(HttpResponse::newRedirectionResponse(*url));
-    } catch (const std::exception& e) {
-        auto resp = HttpResponse::newHttpResponse();
-        resp->setStatusCode(k500InternalServerError);
-        callback(resp);
-        return;
-    }
+    // Try Redis cache first
+    redisClient_->execCommandAsync(
+        [this, callback, code](const drogon::nosql::RedisResult& r) {
+            if (r && !r.isNil()) {
+                // Cache hit
+                std::string url = r.asString();
+                std::cout << "[DEBUG] Redis CACHE HIT for code: " << code << " -> " << url << std::endl;
+                callback(HttpResponse::newRedirectionResponse(url));
+                return;
+            }
+            std::cout << "[DEBUG] Redis CACHE MISS for code: " << code << std::endl;
+            // Cache miss: fallback to DB
+            try {
+                auto url = dataStore_->resolveUrl(code);
+                if (!url) {
+                    auto resp = HttpResponse::newHttpResponse();
+                    resp->setStatusCode(k404NotFound);
+                    callback(resp);
+                    return;
+                }
+                // Cache in Redis (short TTL, e.g., 5 min)
+                redisClient_->execCommandAsync(
+                    [](const drogon::nosql::RedisResult&) {},
+                    [](const drogon::nosql::RedisException&) {},
+                    "setex %s 300 %s", code.c_str(), url->c_str());
+                callback(HttpResponse::newRedirectionResponse(*url));
+            } catch (const std::exception& e) {
+                auto resp = HttpResponse::newHttpResponse();
+                resp->setStatusCode(k500InternalServerError);
+                callback(resp);
+            }
+        },
+        [](const drogon::nosql::RedisException& e) {
+            // Redis error: fallback to DB (handled in lambda above)
+        },
+        "get %s", code.c_str());
 }
 
 void UrlShortenerService::handleListUserUrls(

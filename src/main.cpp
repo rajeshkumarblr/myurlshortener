@@ -4,12 +4,53 @@
 #include "services/DataStore.h"
 #include "security/JwtService.h"
 #include <drogon/drogon.h>
+#include <drogon/nosql/RedisClient.h>
 #include <json/json.h>
+
+
 #include <chrono>
 #include <cstdlib>
 #include <memory>
 #include <optional>
 #include <stdexcept>
+#include <netdb.h>
+#include <unistd.h>
+#include <cstring>
+#include <thread>
+#include <iostream>
+// DNS resolution helper: tries to resolve hostname up to maxAttempts, logs each attempt, returns resolved IP string or empty string on failure
+std::string resolveHostnameWithRetry(const std::string& hostname, int maxAttempts = 20, int delayMs = 500) {
+    char ipstr[INET6_ADDRSTRLEN] = {0};
+    for (int attempt = 1; attempt <= maxAttempts; ++attempt) {
+        struct addrinfo hints = {};
+        hints.ai_family = AF_UNSPEC;
+        hints.ai_socktype = SOCK_STREAM;
+        struct addrinfo* res = nullptr;
+        int err = getaddrinfo(hostname.c_str(), nullptr, &hints, &res);
+        if (err == 0 && res) {
+            void* addr = nullptr;
+            if (res->ai_family == AF_INET) {
+                struct sockaddr_in* ipv4 = (struct sockaddr_in*)res->ai_addr;
+                addr = &(ipv4->sin_addr);
+            } else if (res->ai_family == AF_INET6) {
+                struct sockaddr_in6* ipv6 = (struct sockaddr_in6*)res->ai_addr;
+                addr = &(ipv6->sin6_addr);
+            }
+            if (addr) {
+                inet_ntop(res->ai_family, addr, ipstr, sizeof(ipstr));
+                std::cout << "[DNS] Resolved '" << hostname << "' to IP: " << ipstr << " (attempt " << attempt << ")" << std::endl;
+                freeaddrinfo(res);
+                return std::string(ipstr);
+            }
+            freeaddrinfo(res);
+        } else {
+            std::cout << "[DNS] Attempt " << attempt << ": Failed to resolve '" << hostname << "' (" << gai_strerror(err) << ")" << std::endl;
+        }
+        std::this_thread::sleep_for(std::chrono::milliseconds(delayMs));
+    }
+    std::cerr << "[DNS] ERROR: Could not resolve '" << hostname << "' after " << maxAttempts << " attempts." << std::endl;
+    return std::string();
+}
 
 using namespace std;
 using namespace drogon;
@@ -137,8 +178,60 @@ int main() {
     auto jwtService = make_shared<JwtService>(settings.jwtSecret, settings.jwtTtl);
     auto authService = make_shared<AuthService>(dataStore, jwtService);
     auto authController = make_shared<AuthController>(authService);
-    auto urlService = make_shared<UrlShortenerService>(dataStore, authService, settings.baseUrl);
-    
+
+
+    // Redis connection info: prefer environment, then config.json, then defaults
+    const auto& customConfig = app.getCustomConfig();
+    std::string redisHost;
+    int redisPort = 6379;
+    std::string redisPassword;
+
+    if (const char* envHost = std::getenv("REDIS_HOST")) {
+        redisHost = envHost;
+    } else if (customConfig.isMember("redis") && customConfig["redis"].isObject() && customConfig["redis"].isMember("host")) {
+        redisHost = customConfig["redis"]["host"].asString();
+    } else {
+        redisHost = "redis-master.cache.svc.cluster.local";
+    }
+
+    if (const char* envPort = std::getenv("REDIS_PORT")) {
+        try {
+            redisPort = std::stoi(envPort);
+        } catch (...) {
+            redisPort = 6379;
+        }
+    } else if (customConfig.isMember("redis") && customConfig["redis"].isObject() && customConfig["redis"].isMember("port")) {
+        redisPort = customConfig["redis"]["port"].asInt();
+    } else {
+        redisPort = 6379;
+    }
+
+    if (const char* envPass = std::getenv("REDIS_PASSWORD")) {
+        redisPassword = envPass;
+    } else if (customConfig.isMember("redis") && customConfig["redis"].isObject() && customConfig["redis"].isMember("password")) {
+        redisPassword = customConfig["redis"]["password"].asString();
+    } else {
+        redisPassword = "UrlShortRedis2025";
+    }
+
+    std::cout << "[DEBUG] Redis config: host=" << redisHost << ", port=" << redisPort << ", password=" << redisPassword << std::endl;
+
+    // --- DNS resolution diagnostic ---
+    std::string resolvedIp = resolveHostnameWithRetry(redisHost, 20, 500);
+    if (resolvedIp.empty()) {
+        std::cerr << "[FATAL] Could not resolve Redis host '" << redisHost << "'. Exiting." << std::endl;
+        return 1;
+    }
+    std::cout << "[INFO] Redis hostname '" << redisHost << "' resolved to IP: " << resolvedIp << std::endl;
+    // --- End DNS resolution diagnostic ---
+
+    // Use resolved IP for Redis connection to avoid IPv6/IPv4 ambiguity
+    std::cout << "[DEBUG] Using resolved IP: " << resolvedIp << " for Redis connection (Force IPv4)" << std::endl;
+    trantor::InetAddress redisAddr(resolvedIp, redisPort, false);
+    auto redisClient = drogon::nosql::RedisClient::newRedisClient(redisAddr, 1, redisPassword);
+
+    auto urlService = make_shared<UrlShortenerService>(dataStore, authService, settings.baseUrl, redisClient);
+
     app.registerHandler("/", [](const HttpRequestPtr&, function<void(const HttpResponsePtr&)>&& cb) {
         auto resp = HttpResponse::newFileResponse("public/index.html");
         resp->setStatusCode(k200OK);
@@ -150,7 +243,7 @@ int main() {
         [urlService](const HttpRequestPtr& req, function<void(const HttpResponsePtr&)>&& callback) {
             urlService->handleHealth(req, move(callback));
         }, {Get});
-        
+
     app.registerHandler("/api/v1/shorten",
         [urlService](const HttpRequestPtr& req, function<void(const HttpResponsePtr&)>&& callback) {
             urlService->handleShorten(req, move(callback));
@@ -160,12 +253,12 @@ int main() {
         [urlService](const HttpRequestPtr& req, function<void(const HttpResponsePtr&)>&& callback) {
             urlService->handleListUserUrls(req, move(callback));
         }, {Get});
-        
+
     app.registerHandler("/api/v1/info/{1}",
         [urlService](const HttpRequestPtr& req, function<void(const HttpResponsePtr&)>&& callback, const string& code) {
             urlService->handleInfo(req, move(callback), code);
         }, {Get});
-        
+
     app.registerHandler("/{1}",
         [urlService](const HttpRequestPtr& req, function<void(const HttpResponsePtr&)>&& callback, const string& code) {
             urlService->handleResolve(req, move(callback), code);
@@ -180,6 +273,6 @@ int main() {
         [authController](const HttpRequestPtr& req, function<void(const HttpResponsePtr&)>&& callback) {
             authController->handleLogin(req, move(callback));
         }, {Post});
-    
+
     app.run();
 }

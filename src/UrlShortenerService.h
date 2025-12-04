@@ -3,6 +3,7 @@
 #include "services/DataStore.h"
 #include <drogon/drogon.h>
 #include <json/json.h>
+#include <drogon/nosql/RedisClient.h>
 #include <functional>
 #include <memory>
 #include <optional>
@@ -13,6 +14,7 @@ private:
     std::shared_ptr<DataStore> dataStore_;
     std::shared_ptr<AuthService> authService_;
     std::string baseUrl_;
+    drogon::nosql::RedisClientPtr redisClient_;
 
     drogon::HttpResponsePtr createJsonResponse(
         const Json::Value& data,
@@ -28,7 +30,8 @@ private:
 public:
     UrlShortenerService(std::shared_ptr<DataStore> dataStore,
                         std::shared_ptr<AuthService> authService,
-                        std::string baseUrl);
+                        std::string baseUrl,
+                        drogon::nosql::RedisClientPtr redisClient);
     
     // Health check endpoint
     void handleHealth(const drogon::HttpRequestPtr& req, 
