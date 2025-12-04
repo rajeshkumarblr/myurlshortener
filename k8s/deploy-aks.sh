@@ -52,18 +52,7 @@ EOF
 log() { echo "[deploy-aks] $*"; }
 
 # 3.7) Ensure Redis is deployed as standalone (NO replicas, minimal resources)
-if helm status redis -n cache >/dev/null 2>&1; then
-  log "Existing Redis Helm release found. Deleting to ensure clean standalone deployment."
-  helm uninstall redis -n cache
-  # Wait for pods to terminate
-  log "Waiting for Redis pods to terminate..."
-  while kubectl get pods -n cache -l app.kubernetes.io/instance=redis 2>/dev/null | grep -q redis; do
-    sleep 3
-    printf "."
-  done
-  echo
-fi
-log "Installing Redis (standalone, NO replicas) via Helm"
+log "Installing/Updating Redis (standalone, NO replicas) via Helm"
 helm repo add bitnami https://charts.bitnami.com/bitnami >/dev/null 2>&1 || true
 helm repo update >/dev/null 2>&1
 helm upgrade --install redis bitnami/redis \
