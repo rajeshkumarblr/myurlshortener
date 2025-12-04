@@ -1,6 +1,6 @@
 # URL Shortener Service
 
-Production-ready Drogon (C++) service that issues short URLs behind authenticated APIs, persists data in PostgreSQL, and ships with a polished HTML dashboard plus automated smoke tests.
+Production-ready **Java Spring Boot** service that issues short URLs behind authenticated APIs, persists data in PostgreSQL, and ships with a polished HTML dashboard plus automated smoke tests.
 
 - **Live demo**: https://urlshortener-demo.westus3.cloudapp.azure.com
 - **Latest deploy**: AKS cluster `aks-urlshortener` in `rg-urlshortener-wus3` (Azure West US 3)
@@ -8,7 +8,7 @@ Production-ready Drogon (C++) service that issues short URLs behind authenticate
 
 ## Highlights
 
-- **Secure auth** – Registration/login APIs issue JWT bearer tokens; Drogon filters enforce protected routes.
+- **Secure auth** – Registration/login APIs issue JWT bearer tokens; Spring Security filters enforce protected routes.
 - **PostgreSQL storage** – Self-hosted PostgreSQL (Helm) running in-cluster for a fully self-contained deployment.
 - **Redis Caching** – High-performance URL resolution using the Cache-Aside pattern to minimize database load.
 - **Modern UI** – `public/index.html` now offers a login-first console with gated navigation, instant validation, and link management tools.
@@ -23,18 +23,19 @@ Production-ready Drogon (C++) service that issues short URLs behind authenticate
 ## Quick Start
 
 ```bash
-# Clone and build
-cmake -S . -B build
-cmake --build build -j
+# Build with Maven
+./mvnw clean package
 
 # Provide Postgres connection
-export DATABASE_URL='postgres://user:pass@host:5432/urlshortener?sslmode=require'
+export SPRING_DATASOURCE_URL='jdbc:postgresql://host:5432/urlshortener'
+export SPRING_DATASOURCE_USERNAME='user'
+export SPRING_DATASOURCE_PASSWORD='password'
 
-# Provide Redis connection (optional, defaults to cluster DNS)
+# Provide Redis connection (optional, defaults to localhost)
 export REDIS_HOST=127.0.0.1
 
-# Run Drogon server
-./build/url_shortener
+# Run Spring Boot application
+java -jar target/urlshortener-0.0.1-SNAPSHOT.jar
 
 # Open UI
 xdg-open http://localhost:9090/
@@ -42,17 +43,16 @@ xdg-open http://localhost:9090/
 
 ### Configuration
 
-`config.json` + environment variables drive runtime behavior:
+`application.properties` + environment variables drive runtime behavior:
 
 | Setting | Description |
 | --- | --- |
-| `DATABASE_URL` | Required. Standard Postgres URI (set as env var or `database.url`). |
-| `REDIS_HOST` | Optional. Redis hostname (defaults to `redis-master.cache.svc.cluster.local`). |
+| `SPRING_DATASOURCE_URL` | Required. JDBC URL for Postgres. |
+| `REDIS_HOST` | Optional. Redis hostname (defaults to `localhost`). |
 | `REDIS_PORT` | Optional. Redis port (defaults to `6379`). |
 | `REDIS_PASSWORD` | Optional. Redis password. |
-| `app.base_url` | Optional. Overrides host used when echoing `short` links (defaults to detected origin). |
-| `database.pool_size` | Optional connection pool override; defaults to 4. |
-| `security.jwt_secret`, `security.jwt_ttl_seconds` | JWT signing secret + lifetime (env vars `JWT_SECRET`, `JWT_TTL_SECONDS`). |
+| `APP_BASE_URL` | Optional. Overrides host used when echoing `short` links (defaults to detected origin). |
+| `JWT_SECRET`, `JWT_TTL_SECONDS` | JWT signing secret + lifetime. |
 
 ## Using the APIs
 
@@ -68,7 +68,7 @@ All endpoints return JSON unless noted.
 | GET | `/{code}` | Redirects to the stored destination. |
 | GET | `/api/v1/health` | Health probe (checks DB connectivity). |
 
-Register/login responses include a JWT bearer token; send it via `Authorization: Bearer <token>` (or the legacy `x-api-key`) on authenticated routes.
+Register/login responses include a JWT bearer token; send it via `Authorization: Bearer <token>` on authenticated routes.
 
 ### API Sequence Example (register → shorten → redirect)
 
@@ -125,13 +125,13 @@ What the script does:
 az keyvault create -n kv-urlshortener -g rg-urlshortener-wus3 -l westus3
 az keyvault secret set -n pg-urlshortener -o tsv \
   --vault-name kv-urlshortener \
-  --value 'postgres://user:pass@pg-urlshortener.postgres.database.azure.com:5432/urlshortener?sslmode=require'
+  --value 'jdbc:postgresql://pg-urlshortener.postgres.database.azure.com:5432/urlshortener?sslmode=require&user=user&password=pass'
 
 KEYVAULT_NAME=kv-urlshortener KV_SECRET_NAME=pg-urlshortener \
   bash k8s/deploy-aks.sh
 ```
 
-`DATABASE_URL` is still honored if exported, and `CREATE_PG=true` can provision a dev Postgres automatically. If neither applies, providing `KEYVAULT_NAME` + `KV_SECRET_NAME` is the preferred secure path.
+`SPRING_DATASOURCE_URL` is still honored if exported, and `CREATE_PG=true` can provision a dev Postgres automatically. If neither applies, providing `KEYVAULT_NAME` + `KV_SECRET_NAME` is the preferred secure path.
 
 Re-run the Python smoke suite pointing at the returned hostname or the friendly DNS (`urlshortener-demo.westus3.cloudapp.azure.com`).
 
@@ -139,8 +139,9 @@ Re-run the Python smoke suite pointing at the returned hostname or the friendly 
 
 | Path | Purpose |
 | --- | --- |
-| `src/` | Drogon services, controllers, helper utilities. |
-| `public/index.html` | Auth-aware dashboard served by Drogon. |
+| `src/main/java` | Spring Boot application source code. |
+| `src/main/resources` | Configuration and static assets. |
+| `legacy_cpp/` | Archived C++ implementation. |
 | `k8s/` | Deployment + service manifests and AKS helper script. |
 | `scripts/api_test_suite.py` | End-to-end verification suite. |
 
