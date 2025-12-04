@@ -1,0 +1,26 @@
+graph TD
+    subgraph Client
+        Browser[Browser / Mobile]
+        Curl[CLI Tools]
+    end
+
+    subgraph Azure_AKS["Azure Kubernetes Service (AKS)"]
+        LB[Load Balancer]
+        
+        subgraph Pod["App Pod"]
+            SpringBoot["Spring Boot Application\n(Tomcat Embedded)"]
+            Security["Spring Security\n(JWT Auth)"]
+            Hibernate["Hibernate / JPA"]
+        end
+        
+        Redis[("Redis\n(Cache)")]
+        Postgres[("PostgreSQL\n(Persistence)")]
+    end
+
+    Browser --> LB
+    Curl --> LB
+    LB --> SpringBoot
+    SpringBoot --> Security
+    Security --> Hibernate
+    Hibernate --> Postgres
+    SpringBoot -.->|Cache Aside| Redis
