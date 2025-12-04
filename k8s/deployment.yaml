@@ -36,31 +36,21 @@ spec:
           env:
             - name: APP_PORT
               value: "9090"
-            - name: DATABASE_URL
-              valueFrom:
-                secretKeyRef:
-                  name: external-postgres
-                  key: DATABASE_URL
-            - name: JWT_SECRET
-              valueFrom:
-                secretKeyRef:
-                  name: external-postgres
-                  key: JWT_SECRET
           livenessProbe:
             tcpSocket:
               port: 9090
-            initialDelaySeconds: 5
+            initialDelaySeconds: 15
             periodSeconds: 10
           readinessProbe:
             httpGet:
               path: /api/v1/health
               port: 9090
-            initialDelaySeconds: 2
+            initialDelaySeconds: 10
             periodSeconds: 5
           resources:
             requests:
-              cpu: 50m
-              memory: 64Mi
+              cpu: 100m
+              memory: 256Mi
             limits:
-              cpu: 200m
-              memory: 128Mi
+              cpu: 500m
+              memory: 512Mi

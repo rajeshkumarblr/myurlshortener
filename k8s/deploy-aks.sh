@@ -126,7 +126,12 @@ helm upgrade --install postgres bitnami/postgresql \
   --set primary.resources.limits.cpu=500m
 
 # Internal Cluster DNS for Postgres
-INTERNAL_DB_URL="postgres://postgres:UrlShortPass2025@postgres-postgresql.default.svc.cluster.local:5432/urlshortener"
+DB_HOST="postgres-postgresql.default.svc.cluster.local"
+DB_PORT="5432"
+DB_USER="postgres"
+DB_PASS="UrlShortPass2025"
+DB_NAME="urlshortener"
+JDBC_URL="jdbc:postgresql://${DB_HOST}:${DB_PORT}/${DB_NAME}"
 
 # 4) Build, tag, push image (optional)
 : "${BUILD_IMAGE:=true}"
@@ -145,20 +150,15 @@ log "Getting cluster credentials"
 az aks get-credentials -g "${RG}" -n "${AKS}" --overwrite-existing >/dev/null
 
 # 6) Create/update external PostgreSQL secret
-# Use the internal DB URL if set (Helm install), otherwise fall back to env var
-FINAL_DB_URL="${INTERNAL_DB_URL:-${DATABASE_URL:-}}"
-
-if [ -z "${FINAL_DB_URL}" ]; then
-  log "DATABASE_URL not set."
-  exit 3
-fi
-
 # Use a default JWT secret if not provided (for demo purposes)
-FINAL_JWT_SECRET="${JWT_SECRET:-MySuperSecretKey2025}"
+# Must be at least 32 chars (256 bits) for HS256
+FINAL_JWT_SECRET="${JWT_SECRET:-MySuperSecretKeyForUrlShortener2025!}"
 
 log "Applying external-postgres secret"
 kubectl create secret generic external-postgres \
-  --from-literal=DATABASE_URL="${FINAL_DB_URL}" \
+  --from-literal=SPRING_DATASOURCE_URL="${JDBC_URL}" \
+  --from-literal=SPRING_DATASOURCE_USERNAME="${DB_USER}" \
+  --from-literal=SPRING_DATASOURCE_PASSWORD="${DB_PASS}" \
   --from-literal=JWT_SECRET="${FINAL_JWT_SECRET}" \
   -o yaml --dry-run=client | kubectl apply -f -
 
