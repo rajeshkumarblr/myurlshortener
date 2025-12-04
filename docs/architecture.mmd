@@ -1,4 +1,5 @@
-flowchart LR
+%%{init: {'theme': 'dark', 'themeVariables': { 'fontSize': '20px', 'fontFamily': 'Segoe UI, Tahoma, Geneva, Verdana, sans-serif' }}}%%
+flowchart TB
     subgraph Client [User Space]
         Browser["Browser / Static Console<br>(public/index.html)"]
     end
@@ -13,11 +14,13 @@ flowchart LR
                 Router["Main / Router"]
                 
                 subgraph Controllers ["Controllers"]
+                    direction LR
                     AC["AuthController"]
                     US["UrlShortenerService"]
                 end
                 
                 subgraph Services ["Services"]
+                    direction LR
                     AS["AuthService"]
                     DS["DataStore (ORM)"]
                 end
@@ -45,16 +48,19 @@ flowchart LR
     Postgres -.->|Cached Data| Redis
 
     %% Styling
-    style Browser fill:#f9f,stroke:#333,stroke-width:2px
-    style ALB fill:#eee,stroke:#999,stroke-dasharray: 5 5
+    classDef default color:#fff,stroke-width:2px;
     
-    style AKS fill:#e0f7fa,stroke:#006064,stroke-width:2px
-    style App fill:#e3f2fd,stroke:#1565c0,stroke-width:3px
-    style Router fill:#bbdefb,stroke:#1976d2
-    style AC fill:#fff9c4,stroke:#fbc02d
-    style US fill:#fff9c4,stroke:#fbc02d
-    style AS fill:#dcedc8,stroke:#689f38
-    style DS fill:#dcedc8,stroke:#689f38
+    style Browser fill:#4a148c,stroke:#ea80fc
+    style ALB fill:#424242,stroke:#bdbdbd,stroke-dasharray: 5 5
+    
+    style AKS fill:#004d40,stroke:#80cbc4,color:#fff
+    style App fill:#01579b,stroke:#81d4fa,color:#fff
+    style Router fill:#0277bd,stroke:#81d4fa
+    
+    style AC fill:#f57f17,stroke:#fbc02d,color:#000
+    style US fill:#f57f17,stroke:#fbc02d,color:#000
+    style AS fill:#558b2f,stroke:#aed581
+    style DS fill:#558b2f,stroke:#aed581
 
-    style Redis fill:#ffccbc,stroke:#d84315,stroke-width:2px
-    style Postgres fill:#ffccbc,stroke:#d84315,stroke-width:2px
+    style Redis fill:#bf360c,stroke:#ffab91
+    style Postgres fill:#bf360c,stroke:#ffab91
