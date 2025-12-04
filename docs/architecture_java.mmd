@@ -8,13 +8,13 @@ graph TD
         LB[Load Balancer]
         
         subgraph Pod["App Pod"]
-            SpringBoot["Spring Boot Application\n(Tomcat Embedded)"]
-            Security["Spring Security\n(JWT Auth)"]
+            SpringBoot["Spring Boot Application<br/>(Tomcat Embedded)"]
+            Security["Spring Security<br/>(JWT Auth)"]
             Hibernate["Hibernate / JPA"]
         end
         
-        Redis[("Redis\n(Cache)")]
-        Postgres[("PostgreSQL\n(Persistence)")]
+        Redis[("Redis<br/>(Cache)")]
+        Postgres[("PostgreSQL<br/>(Persistence)")]
     end
 
     Browser --> LB
