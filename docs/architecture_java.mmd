@@ -22,5 +22,6 @@ graph TD
     LB --> SpringBoot
     SpringBoot --> Security
     Security --> Hibernate
-    Hibernate --> Postgres
-    SpringBoot -.->|Cache Aside| Redis
+    Hibernate <--> Postgres
+    SpringBoot <..->|Cache Aside| Redis
+    Postgres -.-> Redis
