@@ -81,5 +81,6 @@
         "format": "cpp",
         "__nullptr": "cpp"
     },
-    "java.compile.nullAnalysis.mode": "automatic"
+    "java.compile.nullAnalysis.mode": "automatic",
+    "java.configuration.updateBuildConfiguration": "interactive"
 }
