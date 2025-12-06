@@ -92,3 +92,12 @@ Thumbs.db
 ehthumbs.db
 Thumbs.db
 node_modules
+
+# Java
+*.jar
+*.class
+target/
+
+# Terraform Secrets
+*.tfvars
+
