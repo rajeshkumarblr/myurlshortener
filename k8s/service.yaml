@@ -5,7 +5,7 @@ metadata:
   labels:
     app: url-shortener
 spec:
-  type: LoadBalancer
+  type: ClusterIP
   selector:
     app: url-shortener
     component: app

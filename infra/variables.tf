@@ -27,3 +27,8 @@ variable "ssh_public_key" {
   type        = string
   sensitive   = true
 }
+
+variable "dns_label" {
+  description = "DNS label for the Ingress Controller Public IP"
+  default     = "urlshortener-rajesh"
+}
