@@ -70,7 +70,7 @@ public class UrlController {
                 .orElse(ResponseEntity.notFound().build());
     }
 
-    @GetMapping("/{code}")
+    @GetMapping("/{code:[a-zA-Z0-9]+}")
     public void redirect(@PathVariable String code, HttpServletResponse response) throws IOException {
         Optional<String> url = urlService.resolve(code);
         if (url.isPresent()) {

@@ -23,7 +23,7 @@ spec:
       terminationGracePeriodSeconds: 5
       containers:
         - name: url-shortener
-          image: acrurlshortener2261.azurecr.io/url-shortener:latest
+          image: acrurlshortener2261.azurecr.io/url-shortener:java-v2
           imagePullPolicy: Always
           ports:
             - name: http
@@ -33,11 +33,17 @@ spec:
                 name: external-postgres
             - configMapRef:
                 name: redis-config
+          volumeMounts:
+            - name: config-volume
+              mountPath: /app/config.json
+              subPath: config.json
           env:
             - name: APP_PORT
               value: "9090"
+            - name: BASE_URL
+              value: "https://myurlshortener.westus3.cloudapp.azure.com"
             - name: APP_BASE_URL
-              value: "https://urlshortener-rajesh.westus3.cloudapp.azure.com"
+              value: "https://myurlshortener.westus3.cloudapp.azure.com"
           livenessProbe:
             tcpSocket:
               port: 9090
@@ -56,3 +62,7 @@ spec:
             limits:
               cpu: 500m
               memory: 512Mi
+      volumes:
+        - name: config-volume
+          configMap:
+            name: app-config

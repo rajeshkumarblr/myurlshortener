@@ -3,15 +3,17 @@ kind: Ingress
 metadata:
   name: url-shortener-ingress
   annotations:
-    cert-manager.io/cluster-issuer: letsencrypt-staging
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+    nginx.ingress.kubernetes.io/limit-rps: "10"
+    nginx.ingress.kubernetes.io/limit-burst: "20"
 spec:
   ingressClassName: nginx
   tls:
   - hosts:
-    - urlshortener-rajesh.westus3.cloudapp.azure.com
+    - myurlshortener.westus3.cloudapp.azure.com
     secretName: tls-secret
   rules:
-  - host: urlshortener-rajesh.westus3.cloudapp.azure.com
+  - host: myurlshortener.westus3.cloudapp.azure.com
     http:
       paths:
       - path: /
