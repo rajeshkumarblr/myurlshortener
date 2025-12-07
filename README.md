@@ -2,9 +2,9 @@
 
 Production-ready **Java Spring Boot** service that issues short URLs behind authenticated APIs, persists data in PostgreSQL, and ships with a polished HTML dashboard plus automated smoke tests.
 
-- **Live demo**: https://urlshortener-demo.westus3.cloudapp.azure.com
+- **Live demo**: https://myurlshortener.westus3.cloudapp.azure.com
 - **Latest deploy**: AKS cluster `aks-urlshortener` in `rg-urlshortener-wus3` (Azure West US 3)
-- **Status**: ✅ Stable — backend, UI, and automated tests are all green (see `scripts/api_test_suite.py`).
+- **Status**: ✅ Stable — backend, UI, and automated tests are all green (see `test_api.sh`).
 
 ## Highlights
 
@@ -12,47 +12,76 @@ Production-ready **Java Spring Boot** service that issues short URLs behind auth
 - **PostgreSQL storage** – Self-hosted PostgreSQL (Helm) running in-cluster for a fully self-contained deployment.
 - **Redis Caching** – High-performance URL resolution using the Cache-Aside pattern to minimize database load.
 - **Modern UI** – `public/index.html` now offers a login-first console with gated navigation, instant validation, and link management tools.
-- **Automated validation** – Python test suite hits every auth + shorten + redirect endpoint locally or against prod via `BASE_URL`.
-- **Cloud deployment** – Single command (`k8s/deploy-aks.sh`) builds the container, pushes to Azure Container Registry, and rolls out to AKS with external Postgres wiring.
+- **Automated validation** – Bash test suite (`test_api.sh`) hits every auth + shorten + redirect endpoint locally or against prod via `BASE_URL`.
+- **Cloud deployment** – Dockerized application deployed to Azure Kubernetes Service (AKS) with Nginx Ingress.
 
 ## Architecture Overview
 
-![Architecture Overview](docs/architecture.png)
+```mermaid
+graph TD
+    User[User / Browser] -->|HTTPS| Ingress[Nginx Ingress Controller]
+    Ingress -->|Routing| Service[K8s Service: url-shortener]
+    Service -->|Load Balance| Pod[Spring Boot Pods]
+    
+    subgraph Kubernetes Cluster
+        Pod -->|Read/Write| DB[(PostgreSQL 16)]
+        Pod -->|Cache Aside| Redis[(Redis Cache)]
+    end
+    
+    style Pod fill:#6db33f,stroke:#333,stroke-width:2px,color:white
+    style DB fill:#336791,stroke:#333,stroke-width:2px,color:white
+    style Redis fill:#d82c20,stroke:#333,stroke-width:2px,color:white
+    style Ingress fill:#4053d6,stroke:#333,stroke-width:2px,color:white
+```
 
+- **Language:** Java 21
+- **Framework:** Spring Boot 3.2.3
+- **Database:** PostgreSQL 16
+- **Cache:** Redis
+- **Containerization:** Docker
+- **Orchestration:** Kubernetes (AKS)
 
 ## Quick Start
 
-```bash
-# Build with Maven
-./mvnw clean package
+### Prerequisites
+- Java 21
+- Maven
+- Docker (optional)
 
-# Provide Postgres connection
-export SPRING_DATASOURCE_URL='jdbc:postgresql://host:5432/urlshortener'
-export SPRING_DATASOURCE_USERNAME='user'
-export SPRING_DATASOURCE_PASSWORD='password'
+### Local Development
 
-# Provide Redis connection (optional, defaults to localhost)
-export REDIS_HOST=127.0.0.1
+1.  **Build with Maven**
+    ```bash
+    ./mvnw clean package
+    ```
 
-# Run Spring Boot application
-java -jar target/urlshortener-0.0.1-SNAPSHOT.jar
+2.  **Run Dependencies (Docker Compose or Local)**
+    Ensure you have PostgreSQL running on port 5432 and Redis on port 6379.
 
-# Open UI
-xdg-open http://localhost:9090/
-```
+3.  **Run Application**
+    ```bash
+    export SPRING_DATASOURCE_URL='jdbc:postgresql://localhost:5432/urlshortener'
+    export SPRING_DATASOURCE_USERNAME='postgres'
+    export SPRING_DATASOURCE_PASSWORD='password'
+    
+    java -jar target/urlshortener-0.0.1-SNAPSHOT.jar
+    ```
 
-### Configuration
+4.  **Access UI**
+    Open http://localhost:9090/
+
+## Configuration
 
 `application.properties` + environment variables drive runtime behavior:
 
 | Setting | Description |
 | --- | --- |
 | `SPRING_DATASOURCE_URL` | Required. JDBC URL for Postgres. |
+| `SPRING_DATASOURCE_USERNAME` | Database username. |
+| `SPRING_DATASOURCE_PASSWORD` | Database password. |
 | `REDIS_HOST` | Optional. Redis hostname (defaults to `localhost`). |
-| `REDIS_PORT` | Optional. Redis port (defaults to `6379`). |
-| `REDIS_PASSWORD` | Optional. Redis password. |
-| `APP_BASE_URL` | Optional. Overrides host used when echoing `short` links (defaults to detected origin). |
-| `JWT_SECRET`, `JWT_TTL_SECONDS` | JWT signing secret + lifetime. |
+| `APP_BASE_URL` | Optional. Overrides host used when echoing `short` links. |
+| `JWT_SECRET` | JWT signing secret. |
 
 ## Using the APIs
 
@@ -68,82 +97,62 @@ All endpoints return JSON unless noted.
 | GET | `/{code}` | Redirects to the stored destination. |
 | GET | `/api/v1/health` | Health probe (checks DB connectivity). |
 
-Register/login responses include a JWT bearer token; send it via `Authorization: Bearer <token>` on authenticated routes.
-
-### API Sequence Example (register → shorten → redirect)
-
-![API Sequence Example](docs/sequence.png)
-
-
-```bash
-TOKEN=$(curl -s -X POST http://localhost:9090/api/v1/register \
-  -H 'Content-Type: application/json' \
-  -d '{"name":"Demo","email":"demo@example.com","password":"SecretPwd1"}' | jq -r '.token')
-
-curl -s -X POST http://localhost:9090/api/v1/shorten \
-  -H "Authorization: Bearer ${TOKEN}" \
-  -H 'Content-Type: application/json' \
-  -d '{"url":"https://example.com","ttl":600}'
-
-curl -s -H "Authorization: Bearer ${TOKEN}" http://localhost:9090/api/v1/urls
-```
-
 ## Testing
 
+We use a comprehensive Bash script to verify the API functionality.
+
+```bash
+# Run against Production (Default)
+./test_api.sh
+
+# Run against Localhost
+# Uncomment BASE_URL="http://localhost:9090" in test_api.sh
+./test_api.sh
 ```
-python3 -m venv .venv && source .venv/bin/activate
-pip install -r scripts/requirements.txt
 
-# Local server
-BASE_URL=http://localhost:9090 python scripts/api_test_suite.py
-
-# Against prod (AKS)
-BASE_URL=http://4.249.87.222 python scripts/api_test_suite.py
-```
-
-The suite performs health → register/login → shorten/list/info/redirect checks and fails fast on regressions.
+The suite performs:
+1.  **Health Check**: Verifies server is online.
+2.  **Smoke Test**: Checks if `index.html` loads (HTTP 200).
+3.  **Auth Flow**: Registers a new random user and retrieves a JWT token.
+4.  **Protected Routes**: Shortens a URL and lists user URLs using the token.
+5.  **Public Routes**: Verifies redirection and info endpoints.
+6.  **Negative Tests**: Checks 401 Unauthorized and 404 Not Found scenarios.
 
 ## Deployment
 
-```
-bash k8s/deploy-aks.sh
-```
+The application is deployed to Azure Kubernetes Service.
 
-What the script does:
+### Key Manifests (in `k8s/`)
+- `deployment.yaml`: Defines the application pods, environment variables, and resource limits.
+- `service.yaml`: Exposes the application internally.
+- `ingress.yaml`: Configures Nginx Ingress to route traffic from the public IP.
 
-1. Ensures Azure resource group, AKS cluster, and ACR (Basic SKU) exist.
-2. Installs **Redis** and **PostgreSQL** via Helm charts into the cluster.
-3. Builds the Docker image using the repo’s multi-stage Dockerfile.
-4. Pushes to ACR and wires AKS with `external-postgres` secret pointing to the in-cluster Postgres.
-5. Applies `k8s/deployment.yaml` + `k8s/service.yaml`, waits for rollout, and prints the LoadBalancer endpoint.
+### Database Access (Secure)
 
-### Pulling secrets from Azure Key Vault
+To access the production PostgreSQL database securely from your local machine (e.g., using VS Code or pgAdmin), use **Kubernetes Port Forwarding**:
 
-(Optional) If you still want to use an external Azure Postgres, you can provide the connection string via Key Vault:
+1.  **Start the Tunnel**
+    ```bash
+    # Forward remote port 5432 to local port 5433 (to avoid conflict with local Postgres)
+    kubectl port-forward svc/postgres-postgresql 5433:5432
+    ```
 
-```bash
-az keyvault create -n kv-urlshortener -g rg-urlshortener-wus3 -l westus3
-az keyvault secret set -n pg-urlshortener -o tsv \
-  --vault-name kv-urlshortener \
-  --value 'jdbc:postgresql://pg-urlshortener.postgres.database.azure.com:5432/urlshortener?sslmode=require&user=user&password=pass'
-
-KEYVAULT_NAME=kv-urlshortener KV_SECRET_NAME=pg-urlshortener \
-  bash k8s/deploy-aks.sh
-```
-
-`SPRING_DATASOURCE_URL` is still honored if exported, and `CREATE_PG=true` can provision a dev Postgres automatically. If neither applies, providing `KEYVAULT_NAME` + `KV_SECRET_NAME` is the preferred secure path.
-
-Re-run the Python smoke suite pointing at the returned hostname or the friendly DNS (`urlshortener-demo.westus3.cloudapp.azure.com`).
+2.  **Connect**
+    - **Host:** `localhost`
+    - **Port:** `5433`
+    - **User:** `postgres`
+    - **Password:** (Retrieve from K8s secret `postgres-postgresql`)
+    - **Database:** `urlshortener`
 
 ## Repository Layout
 
 | Path | Purpose |
 | --- | --- |
 | `src/main/java` | Spring Boot application source code. |
-| `src/main/resources` | Configuration and static assets. |
-| `legacy_cpp/` | Archived C++ implementation. |
-| `k8s/` | Deployment + service manifests and AKS helper script. |
-| `scripts/api_test_suite.py` | End-to-end verification suite. |
+| `src/main/resources` | Configuration and static assets (HTML/JS). |
+| `k8s/` | Kubernetes manifests for AKS deployment. |
+| `test_api.sh` | End-to-end regression test script. |
+| `legacy_cpp/` | Archived C++ implementation (deprecated). |
 
 ## License
 
