@@ -18,7 +18,7 @@ public class AppUser {
     @Column(nullable = false)
     private String name;
 
-    @Column(nullable = false, unique = true, columnDefinition = "citext")
+    @Column(nullable = false, unique = true)
     private String email;
 
     @Column(name = "password_hash", nullable = false, columnDefinition = "TEXT")
@@ -31,4 +31,7 @@ public class AppUser {
     @UpdateTimestamp
     @Column(name = "updated_at", nullable = false)
     private Instant updatedAt;
+
+    @Column(nullable = false)
+    private String role = "USER"; // USER, ADMIN
 }

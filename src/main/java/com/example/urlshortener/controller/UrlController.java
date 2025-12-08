@@ -4,8 +4,10 @@ import com.example.urlshortener.dto.ShortenRequest;
 import com.example.urlshortener.dto.ShortenResponse;
 import com.example.urlshortener.dto.UrlInfoResponse;
 import com.example.urlshortener.model.AppUser;
+import com.example.urlshortener.service.AnalyticsService;
 import com.example.urlshortener.service.AuthService;
 import com.example.urlshortener.service.UrlService;
+import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -23,6 +25,7 @@ public class UrlController {
 
     private final UrlService urlService;
     private final AuthService authService;
+    private final AnalyticsService analyticsService;
 
     @GetMapping("/api/v1/health")
     public ResponseEntity<String> health() {
@@ -71,9 +74,10 @@ public class UrlController {
     }
 
     @GetMapping("/{code:[a-zA-Z0-9]+}")
-    public void redirect(@PathVariable String code, HttpServletResponse response) throws IOException {
+    public void redirect(@PathVariable String code, HttpServletResponse response, HttpServletRequest request) throws IOException {
         Optional<String> url = urlService.resolve(code);
         if (url.isPresent()) {
+            analyticsService.logClick(code, request);
             response.sendRedirect(url.get());
         } else {
             response.sendError(HttpServletResponse.SC_NOT_FOUND);

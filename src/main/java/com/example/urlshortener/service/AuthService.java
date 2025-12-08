@@ -19,23 +19,29 @@ public class AuthService {
 
     @Transactional
     public AuthResponse register(RegisterRequest request) {
-        if (userRepository.findByEmail(request.getEmail()).isPresent()) {
+        String email = request.getEmail().toLowerCase();
+        if (userRepository.findByEmail(email).isPresent()) {
             throw new IllegalArgumentException("Email already registered");
         }
 
         AppUser user = new AppUser();
         user.setName(request.getName());
-        user.setEmail(request.getEmail());
+        user.setEmail(email);
         user.setPasswordHash(BCrypt.hashpw(request.getPassword(), BCrypt.gensalt()));
+
+        if ("admin@example.com".equalsIgnoreCase(email)) {
+            user.setRole("ADMIN");
+        }
 
         user = userRepository.save(user);
 
         String token = jwtService.generateToken(user.getId(), user.getEmail());
-        return new AuthResponse(user.getId(), user.getName(), user.getEmail(), token);
+        return new AuthResponse(user.getId(), user.getName(), user.getEmail(), token, user.getRole());
     }
 
     public AuthResponse login(LoginRequest request) {
-        AppUser user = userRepository.findByEmail(request.getEmail())
+        String email = request.getEmail().toLowerCase();
+        AppUser user = userRepository.findByEmail(email)
                 .orElseThrow(() -> new IllegalArgumentException("Invalid email or password"));
 
         if (!BCrypt.checkpw(request.getPassword(), user.getPasswordHash())) {
@@ -43,7 +49,7 @@ public class AuthService {
         }
 
         String token = jwtService.generateToken(user.getId(), user.getEmail());
-        return new AuthResponse(user.getId(), user.getName(), user.getEmail(), token);
+        return new AuthResponse(user.getId(), user.getName(), user.getEmail(), token, user.getRole());
     }
     
     public AppUser getUser(Long id) {

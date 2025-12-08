@@ -4,8 +4,10 @@ metadata:
   name: url-shortener
   labels:
     app: url-shortener
+  annotations:
+    service.beta.kubernetes.io/azure-dns-label-name: myurlshortener
 spec:
-  type: ClusterIP
+  type: LoadBalancer
   selector:
     app: url-shortener
     component: app
