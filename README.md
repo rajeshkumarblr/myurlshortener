@@ -11,7 +11,7 @@ Production-ready **Java Spring Boot** service that issues short URLs behind auth
 - **Secure auth** – Registration/login APIs issue JWT bearer tokens; Spring Security filters enforce protected routes.
 - **PostgreSQL storage** – Self-hosted PostgreSQL (Helm) running in-cluster for a fully self-contained deployment.
 - **Redis Caching** – High-performance URL resolution using the Cache-Aside pattern to minimize database load.
-- **Modern UI** – `public/index.html` now offers a login-first console with gated navigation, instant validation, and link management tools.
+- **Modern UI** – Frontend built with **ReactJS** and **Vite**, offering a responsive dashboard, secure authentication, and real-time link management.
 - **Automated validation** – Bash test suite (`test_api.sh`) hits every auth + shorten + redirect endpoint locally or against prod via `BASE_URL`.
 - **Cloud deployment** – Dockerized application deployed to Azure Kubernetes Service (AKS) with Nginx Ingress.
 
@@ -36,6 +36,7 @@ graph TD
 
 - **Language:** Java 21
 - **Framework:** Spring Boot 3.2.3
+- **Frontend:** ReactJS + Vite
 - **Database:** PostgreSQL 16
 - **Cache:** Redis
 - **Containerization:** Docker
