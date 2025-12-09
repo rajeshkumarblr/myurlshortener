@@ -1,7 +1,7 @@
 import React from 'react';
-import { LayoutDashboard, Link, User, LogIn, BarChart2 } from 'lucide-react';
+import { LayoutDashboard, Link, User, LogIn, BarChart2, Moon, Sun } from 'lucide-react';
 
-export function Sidebar({ activeView, onViewChange, user }) {
+export function Sidebar({ activeView, onViewChange, user, theme, toggleTheme }) {
   const navItems = [
     { id: 'auth', label: 'Sign in', icon: LogIn, hidden: !!user },
     { id: 'shorten', label: 'Shorten URLs', icon: LayoutDashboard, protected: true },
@@ -36,6 +36,10 @@ export function Sidebar({ activeView, onViewChange, user }) {
         })}
       </nav>
       <div className="sidebar-footer">
+        <button className="nav-item" onClick={toggleTheme} style={{ marginBottom: '1rem', width: '100%', justifyContent: 'flex-start' }}>
+          {theme === 'dark' ? <Sun size={18} /> : <Moon size={18} />}
+          {theme === 'dark' ? 'Light Mode' : 'Dark Mode'}
+        </button>
         <strong>{user ? `Signed in as ${user.name}` : 'Guest mode'}</strong>
         <p>{user ? 'Workspace active' : 'Authenticate to unlock tools.'}</p>
       </div>

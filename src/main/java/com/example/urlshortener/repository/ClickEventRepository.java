@@ -12,6 +12,11 @@ public interface ClickEventRepository extends JpaRepository<ClickEvent, Long> {
     
     @Query("SELECT c.urlMapping.code, COUNT(c) FROM ClickEvent c GROUP BY c.urlMapping.code")
     List<Object[]> countClicksByUrl();
+
+    @Query("SELECT c.urlMapping.code, COUNT(c) FROM ClickEvent c WHERE c.urlMapping.user.id = :userId GROUP BY c.urlMapping.code")
+    List<Object[]> countClicksByUserId(Long userId);
     
+    void deleteByUrlMappingCode(String code);
+
     long count();
 }

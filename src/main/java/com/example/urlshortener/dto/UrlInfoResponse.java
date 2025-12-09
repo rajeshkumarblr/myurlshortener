@@ -15,4 +15,5 @@ public class UrlInfoResponse {
     private Long expiresAt;
     @JsonProperty("ttl_active")
     private Boolean ttlActive;
+    private Long clicks;
 }

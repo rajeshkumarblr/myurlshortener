@@ -18,12 +18,22 @@ const VIEW_META = {
 function App() {
   const [user, setUser] = useState(api.getProfile());
   const [view, setView] = useState(user ? 'shorten' : 'auth');
+  const [theme, setTheme] = useState(localStorage.getItem('theme') || 'light');
 
   useEffect(() => {
     if (!user && view !== 'auth') {
       setView('auth');
     }
   }, [user, view]);
+
+  useEffect(() => {
+    document.documentElement.setAttribute('data-theme', theme);
+    localStorage.setItem('theme', theme);
+  }, [theme]);
+
+  const toggleTheme = () => {
+    setTheme(prev => prev === 'light' ? 'dark' : 'light');
+  };
 
   const handleLogin = (profile) => {
     setUser(profile);
@@ -51,6 +61,8 @@ function App() {
         activeView={view} 
         onViewChange={setView} 
         user={user} 
+        theme={theme}
+        toggleTheme={toggleTheme}
       />
       
       <main className="workspace">

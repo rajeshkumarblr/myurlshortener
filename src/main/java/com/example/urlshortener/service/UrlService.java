@@ -5,6 +5,7 @@ import com.example.urlshortener.dto.ShortenResponse;
 import com.example.urlshortener.dto.UrlInfoResponse;
 import com.example.urlshortener.model.AppUser;
 import com.example.urlshortener.model.UrlMapping;
+import com.example.urlshortener.repository.ClickEventRepository;
 import com.example.urlshortener.repository.UrlMappingRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
@@ -14,6 +15,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.Random;
 import java.util.concurrent.TimeUnit;
@@ -24,6 +26,7 @@ import java.util.stream.Collectors;
 public class UrlService {
 
     private final UrlMappingRepository urlRepository;
+    private final ClickEventRepository clickEventRepository;
     private final StringRedisTemplate redisTemplate;
 
     @Value("${app.base-url}")
@@ -104,9 +107,32 @@ public class UrlService {
     }
 
     public List<UrlInfoResponse> listUrls(AppUser user) {
-        return urlRepository.findByUserIdOrderByCreatedAtDesc(user.getId()).stream()
-                .map(this::toInfoResponse)
+        List<UrlMapping> mappings = urlRepository.findByUserIdOrderByCreatedAtDesc(user.getId());
+        
+        Map<String, Long> clicksMap = clickEventRepository.countClicksByUserId(user.getId()).stream()
+                .collect(Collectors.toMap(obj -> (String) obj[0], obj -> (Long) obj[1]));
+
+        return mappings.stream()
+                .map(mapping -> {
+                    UrlInfoResponse info = toInfoResponse(mapping);
+                    info.setClicks(clicksMap.getOrDefault(mapping.getCode(), 0L));
+                    return info;
+                })
                 .collect(Collectors.toList());
+    }
+
+    @Transactional
+    public void deleteUrl(String code, AppUser user) {
+        UrlMapping mapping = urlRepository.findById(code)
+                .orElseThrow(() -> new RuntimeException("URL not found"));
+
+        if (!mapping.getUser().getId().equals(user.getId())) {
+            throw new RuntimeException("Unauthorized");
+        }
+
+        clickEventRepository.deleteByUrlMappingCode(code);
+        urlRepository.delete(mapping);
+        redisTemplate.delete(code);
     }
 
     public Optional<UrlInfoResponse> getInfo(String code) {

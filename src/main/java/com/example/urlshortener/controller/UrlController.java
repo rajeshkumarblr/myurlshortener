@@ -66,6 +66,31 @@ public class UrlController {
         return ResponseEntity.ok(urlService.listUrls(user));
     }
 
+    @DeleteMapping("/api/v1/urls/{code}")
+    public ResponseEntity<Void> deleteUrl(
+            @RequestAttribute(value = "userId", required = false) Long userId,
+            @PathVariable String code) {
+        
+        if (userId == null) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
+        }
+
+        AppUser user = authService.getUser(userId);
+        if (user == null) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
+        }
+
+        try {
+            urlService.deleteUrl(code, user);
+            return ResponseEntity.noContent().build();
+        } catch (RuntimeException e) {
+            if ("Unauthorized".equals(e.getMessage())) {
+                return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
+            }
+            return ResponseEntity.notFound().build();
+        }
+    }
+
     @GetMapping("/api/v1/info/{code}")
     public ResponseEntity<UrlInfoResponse> getInfo(@PathVariable String code) {
         return urlService.getInfo(code)
