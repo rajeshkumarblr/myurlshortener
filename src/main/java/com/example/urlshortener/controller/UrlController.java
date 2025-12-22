@@ -33,7 +33,7 @@ public class UrlController {
         return ResponseEntity.ok("ok");
     }
 
-    @PostMapping("/api/v1/shorten")
+    @PostMapping({"/api/v1/shorten", "/shorten"})
     public ResponseEntity<ShortenResponse> shorten(
             @RequestAttribute(value = "userId", required = false) Long userId,
             @Valid @RequestBody ShortenRequest request) {

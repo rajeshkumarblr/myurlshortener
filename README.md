@@ -138,12 +138,32 @@ To access the production PostgreSQL database securely from your local machine (e
     kubectl port-forward svc/postgres-postgresql 5433:5432
     ```
 
-2.  **Connect**
+2.  **Connect via CLI**
+    ```bash
+    # Connect using the 'postgres' user and the production password
+    psql 'postgres://postgres:UrlShortPass2025@localhost:5433/urlshortener'
+    ```
+
+3.  **Connect via GUI**
     - **Host:** `localhost`
     - **Port:** `5433`
     - **User:** `postgres`
-    - **Password:** (Retrieve from K8s secret `postgres-postgresql`)
+    - **Password:** `UrlShortPass2025`
     - **Database:** `urlshortener`
+
+## Monitoring & Observability
+
+The cluster includes a full monitoring stack:
+
+- **Prometheus**: Scrapes metrics from the application (`/actuator/prometheus`) and PostgreSQL.
+- **Grafana**: Visualizes metrics with pre-configured dashboards.
+
+### Accessing Grafana
+```bash
+# Forward Grafana port
+kubectl port-forward svc/grafana 3000:80
+```
+Open http://localhost:3000 (Default login: `admin` / `admin`).
 
 ## Repository Layout
 

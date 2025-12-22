@@ -29,8 +29,6 @@ spec:
             - name: http
               containerPort: 9090
           envFrom:
-            - secretRef:
-                name: external-postgres
             - configMapRef:
                 name: redis-config
           volumeMounts:
@@ -38,6 +36,15 @@ spec:
               mountPath: /app/config.json
               subPath: config.json
           env:
+            - name: SPRING_DATASOURCE_URL
+              value: "jdbc:postgresql://postgres-postgresql:5432/urlshortener"
+            - name: SPRING_DATASOURCE_USERNAME
+              value: "postgres"
+            - name: SPRING_DATASOURCE_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: postgres-postgresql
+                  key: postgres-password
             - name: APP_PORT
               value: "9090"
             - name: BASE_URL
